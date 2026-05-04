@@ -1,5 +1,9 @@
 from pathlib import Path
 from datetime import timedelta
+import os
+import pymysql
+
+pymysql.install_as_MySQLdb()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -9,7 +13,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = "django-insecure-l8f*0$-f*^%70#m2#f4)d)ftt^6qz6un8@vwa!&v)fx%vpqbxq"
+SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "django-insecure-dev-key-change-me")
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
@@ -20,6 +24,7 @@ ALLOWED_HOSTS = []
 # Application definition
 
 INSTALLED_APPS = [
+    "daphne",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -28,10 +33,17 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     # Third party apps
     "rest_framework",
+    "rest_framework_simplejwt",
     "djoser",
     "corsheaders",
+    "channels",
     # Your apps
-    "accounts",
+    "accounts.apps.AccountsConfig",
+    "profiles",
+    "gigs",
+    "applications",
+    "payments",
+    "notifications",
 ]
 
 MIDDLEWARE = [
@@ -149,6 +161,7 @@ SIMPLE_JWT = {
     "USER_ID_CLAIM": "user_id",
     "AUTH_TOKEN_CLASSES": ("rest_framework_simplejwt.tokens.AccessToken",),
     "TOKEN_TYPE_CLAIM": "token_type",
+    "TOKEN_OBTAIN_SERIALIZER": "accounts.serializers.VerifiedTokenObtainPairSerializer",
 }
 
 # ============================================
@@ -193,17 +206,16 @@ DJOSER = {
 # ============================================
 # EMAIL CONFIGURATION
 # ============================================
-# For Development - Console Backend (emails printed in console)
-EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+
 
 # For Production - SMTP Backend (uncomment and configure)
-# EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-# EMAIL_HOST = 'smtp.gmail.com'
-# EMAIL_PORT = 587
-# EMAIL_USE_TLS = True
-# EMAIL_HOST_USER = 'your-email@gmail.com'
-# EMAIL_HOST_PASSWORD = 'your-app-password'
-# DEFAULT_FROM_EMAIL = 'your-email@gmail.com'
+EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+EMAIL_HOST = "smtp.gmail.com"
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER)
 
 
 CORS_ALLOW_ALL_ORIGINS = True
@@ -232,3 +244,66 @@ CORS_ALLOW_HEADERS = [
 # ============================================
 DOMAIN = "localhost:5173"  # Your frontend domain
 SITE_NAME = "TutorLink"
+
+FRONTEND_URL = "http://localhost:5173"
+
+
+ASGI_APPLICATION = "core.asgi.application"
+
+# Channel Layers - For Development (In-Memory)
+CHANNEL_LAYERS = {"default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}}
+
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "verbose": {
+            "format": "{levelname} {asctime} {module} {message}",
+            "style": "{",
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "verbose",
+        },
+    },
+    "loggers": {
+        "notifications": {
+            "handlers": ["console"],
+            "level": "INFO",  # Change to DEBUG for more details
+            "propagate": False,
+        },
+        "django": {
+            "handlers": ["console"],
+            "level": "INFO",
+        },
+    },
+}
+
+
+# settings.py - Add these configurations
+
+from pathlib import Path
+
+# Media files configuration
+MEDIA_URL = "/media/"
+MEDIA_ROOT = os.path.join(BASE_DIR, "media")
+
+# File upload settings
+FILE_UPLOAD_MAX_MEMORY_SIZE = 10485760  # 10MB
+DATA_UPLOAD_MAX_MEMORY_SIZE = 10485760  # 10MB
+
+# Allowed file extensions for verification documents
+ALLOWED_DOCUMENT_EXTENSIONS = [".pdf", ".jpg", ".jpeg", ".png", ".doc", ".docx"]
+MAX_DOCUMENT_SIZE = 5 * 1024 * 1024  # 5MB
+
+# Create media directories
+TEACHER_DOCUMENTS_DIR = "teacher_documents"
+PARENT_DOCUMENTS_DIR = "parent_documents"
+
+KHALTI_SECRET_KEY = os.getenv("KHALTI_SECRET_KEY", "")
+KHALTI_PUBLIC_KEY = os.getenv("KHALTI_PUBLIC_KEY", "")
+KHALTI_INITIATE_URL = "https://dev.khalti.com/api/v2/epayment/initiate/"
+KHALTI_LOOKUP_URL = "https://dev.khalti.com/api/v2/epayment/lookup/"

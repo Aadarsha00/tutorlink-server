@@ -2,15 +2,19 @@ from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
+from . import public_views
 
 urlpatterns = [
     path("admin/", admin.site.urls),
     # API v1 endpoints
+    path("api/v1/public/landing/", public_views.landing_data),
+    path("api/v1/public/tutors/", public_views.tutors),
+    path("api/v1/public/testimonials/", public_views.testimonials),
+    path("api/v1/public/contact/", public_views.contact_message),
     path("api/v1/", include("accounts.urls")),
     path("api/v1/profiles/", include("profiles.urls")),
-    path("api/v1/gigs/", include("gigs.urls")),
-    path("api/v1/applications/", include("applications.urls")),
-    path("api/v1/escrow/", include("escrow.urls")),
+    path("api/v1/", include("gigs.urls")),
+    path("api/v1/", include("applications.urls")),
     path("api/v1/payments/", include("payments.urls")),
     path("api/v1/notifications/", include("notifications.urls")),
 ]

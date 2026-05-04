@@ -145,7 +145,6 @@ class CustomUserViewSet(viewsets.ReadOnlyModelViewSet):
         stats = {
             "total_users": User.objects.count(),
             "active_users": User.objects.filter(is_active=True).count(),
-            "verified_users": User.objects.filter(is_email_verified=True).count(),
             "teachers": {
                 "total": User.objects.filter(role="teacher").count(),
                 "active": User.objects.filter(role="teacher", is_active=True).count(),

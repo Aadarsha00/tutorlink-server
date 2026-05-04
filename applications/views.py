@@ -1,31 +1,45 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
 from django.utils import timezone
 from datetime import timedelta
 from .models import Application
 from .serializers import ApplicationSerializer, ApplicationListSerializer
-from notifications.services import NotificationService
+from notifications.services import ApplicationNotificationService
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class ApplicationViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing job applications
+    """
+
     permission_classes = [IsAuthenticated]
+    serializer_class = ApplicationSerializer
 
     def get_queryset(self):
+        """
+        Filter applications based on user role
+        - Teachers see their own applications
+        - Parents see applications to their gigs
+        - Admins see all applications
+        """
         user = self.request.user
+
         if user.role == "teacher":
-            return (
-                Application.objects.filter(teacher=user)
-                .select_related("gig", "gig__parent")
-                .order_by("-created_at")
+            return Application.objects.filter(teacher=user).select_related(
+                "gig", "teacher", "gig__parent"
             )
         elif user.role == "parent":
-            return (
-                Application.objects.filter(gig__parent=user)
-                .select_related("teacher", "gig")
-                .order_by("-created_at")
+            return Application.objects.filter(gig__parent=user).select_related(
+                "gig", "teacher"
             )
+        elif user.role == "admin":
+            return Application.objects.all().select_related("gig", "teacher")
+
         return Application.objects.none()
 
     def get_serializer_class(self):
@@ -33,19 +47,160 @@ class ApplicationViewSet(viewsets.ModelViewSet):
             return ApplicationListSerializer
         return ApplicationSerializer
 
-    @action(detail=True, methods=["post"])
-    def accept(self, request, pk=None):
-        """Teacher accepts selection"""
-        application = self.get_object()
+    def perform_create(self, serializer):
+        """
+        Create application and send notification to parent
+        """
+        try:
+            # Save the application
+            application = serializer.save()
 
-        if application.teacher != request.user:
-            return Response(
-                {"error": "Not authorized"}, status=status.HTTP_403_FORBIDDEN
+            logger.info(
+                f"Application created: ID={application.id}, "
+                f"Teacher={application.teacher.email}, "
+                f"Gig={application.gig.title}"
             )
 
+            # Send notification to parent
+            try:
+                ApplicationNotificationService.notify_application_received(application)
+                logger.info(
+                    f"✅ Notification sent to parent {application.gig.parent.email} "
+                    f"for gig '{application.gig.title}'"
+                )
+            except Exception as e:
+                logger.error(f"❌ Failed to send notification: {e}")
+                # Don't fail the application creation if notification fails
+
+        except Exception as e:
+            logger.error(f"❌ Failed to create application: {e}")
+            raise
+
+    @action(detail=True, methods=["post"], permission_classes=[IsAuthenticated])
+    def withdraw(self, request, pk=None):
+        """
+        Withdraw an application (Teacher only)
+
+        POST /applications/{id}/withdraw/
+        """
+        application = self.get_object()
+
+        # Only the teacher who applied can withdraw
+        if application.teacher != request.user:
+            return Response(
+                {"error": "You can only withdraw your own applications"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # Can only withdraw pending applications
+        if application.status != "pending":
+            return Response(
+                {"error": "Can only withdraw pending applications"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        application.status = "withdrawn"
+        application.save()
+
+        logger.info(
+            f"Application {application.id} withdrawn by teacher {request.user.email}"
+        )
+
+        return Response(
+            {"message": "Application withdrawn successfully"},
+            status=status.HTTP_200_OK,
+        )
+
+    @action(detail=True, methods=["post"], permission_classes=[IsAuthenticated])
+    def select(self, request, pk=None):
+        """
+        Select an application (Parent only)
+        Sets 48-hour response deadline for teacher
+
+        POST /applications/{id}/select/
+        """
+        application = self.get_object()
+
+        # Only the gig owner (parent) can select
+        if application.gig.parent != request.user:
+            return Response(
+                {"error": "Only the gig owner can select applicants"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # Can only select pending applications
+        if application.status != "pending":
+            return Response(
+                {"error": "Can only select pending applications"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Check if gig is still open
+        if application.gig.status != "open":
+            return Response(
+                {"error": "This gig is no longer accepting applications"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Update application status
+        application.status = "selected"
+        application.selected_at = timezone.now()
+        application.response_deadline = timezone.now() + timedelta(hours=48)
+        application.save()
+
+        # Update gig status
+        application.gig.status = "selection_pending"
+        application.gig.selected_teacher = application.teacher
+        application.gig.save()
+
+        logger.info(
+            f"Application {application.id} selected by parent {request.user.email}. "
+            f"Deadline: {application.response_deadline}"
+        )
+
+        # Send notification to teacher
+        try:
+            ApplicationNotificationService.notify_teacher_selected(application)
+            logger.info(
+                f"✅ Selection notification sent to teacher {application.teacher.email}"
+            )
+        except Exception as e:
+            logger.error(f"❌ Failed to send selection notification: {e}")
+
+        serializer = self.get_serializer(application)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"], permission_classes=[IsAuthenticated])
+    def accept(self, request, pk=None):
+        """
+        Accept a selection (Teacher only)
+        Teacher accepts parent's selection within 48 hours
+
+        POST /applications/{id}/accept/
+        """
+        application = self.get_object()
+
+        # Only the selected teacher can accept
+        if application.teacher != request.user:
+            return Response(
+                {"error": "You can only accept your own selections"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # Can only accept selected applications
         if application.status != "selected":
             return Response(
-                {"error": "Application is not in selected state"},
+                {"error": "Can only accept selected applications"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Check if deadline has passed
+        if (
+            application.response_deadline
+            and timezone.now() > application.response_deadline
+        ):
+            return Response(
+                {"error": "Response deadline has passed"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -54,36 +209,54 @@ class ApplicationViewSet(viewsets.ModelViewSet):
         application.responded_at = timezone.now()
         application.save()
 
-        # Update gig
-        gig = application.gig
-        gig.hired_teacher = application.teacher
-        gig.status = "payment_pending"
-        gig.save()
+        # Update gig status
+        application.gig.status = "payment_pending"
+        application.gig.hired_teacher = application.teacher
+        application.gig.save()
 
-        # Notify parent
-        NotificationService.send_notification(
-            user=gig.parent,
-            notification_type="selection_accepted",
-            title="Teacher Accepted!",
-            message=f"{application.teacher.email} accepted your selection for {gig.title}",
-            link=f"/parent/gigs/{gig.id}",
+        # Reject all other pending/selected applications for this gig
+        Application.objects.filter(
+            gig=application.gig, status__in=["pending", "selected"]
+        ).exclude(id=application.id).update(status="rejected")
+
+        logger.info(
+            f"Application {application.id} accepted by teacher {request.user.email}. "
+            f"Gig moving to payment_pending."
         )
 
-        return Response({"status": "accepted"})
+        # Send notification to parent
+        try:
+            ApplicationNotificationService.notify_selection_accepted(application)
+            logger.info(
+                f"✅ Acceptance notification sent to parent {application.gig.parent.email}"
+            )
+        except Exception as e:
+            logger.error(f"❌ Failed to send acceptance notification: {e}")
 
-    @action(detail=True, methods=["post"])
+        serializer = self.get_serializer(application)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"], permission_classes=[IsAuthenticated])
     def reject(self, request, pk=None):
-        """Teacher rejects selection"""
+        """
+        Reject a selection (Teacher only)
+        Teacher declines parent's selection
+
+        POST /applications/{id}/reject/
+        """
         application = self.get_object()
 
+        # Only the selected teacher can reject
         if application.teacher != request.user:
             return Response(
-                {"error": "Not authorized"}, status=status.HTTP_403_FORBIDDEN
+                {"error": "You can only reject your own selections"},
+                status=status.HTTP_403_FORBIDDEN,
             )
 
+        # Can only reject selected applications
         if application.status != "selected":
             return Response(
-                {"error": "Application is not in selected state"},
+                {"error": "Can only reject selected applications"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -92,63 +265,24 @@ class ApplicationViewSet(viewsets.ModelViewSet):
         application.responded_at = timezone.now()
         application.save()
 
-        # Update gig back to open/selection_pending
-        gig = application.gig
-        gig.selected_teacher = None
-        gig.status = "open"
-        gig.save()
+        # Revert gig status back to open
+        application.gig.status = "open"
+        application.gig.selected_teacher = None
+        application.gig.save()
 
-        # Notify parent
-        NotificationService.send_notification(
-            user=gig.parent,
-            notification_type="selection_rejected",
-            title="Teacher Declined",
-            message=f"{application.teacher.email} declined your selection for {gig.title}",
-            link=f"/parent/gigs/{gig.id}/applications",
+        logger.info(
+            f"Application {application.id} rejected by teacher {request.user.email}. "
+            f"Gig back to open status."
         )
 
-        return Response({"status": "rejected"})
-
-    @action(detail=True, methods=["post"])
-    def select(self, request, pk=None):
-        """Parent selects a teacher"""
-        application = self.get_object()
-
-        if application.gig.parent != request.user:
-            return Response(
-                {"error": "Not authorized"}, status=status.HTTP_403_FORBIDDEN
+        # Send notification to parent
+        try:
+            ApplicationNotificationService.notify_selection_rejected(application)
+            logger.info(
+                f"✅ Rejection notification sent to parent {application.gig.parent.email}"
             )
+        except Exception as e:
+            logger.error(f"❌ Failed to send rejection notification: {e}")
 
-        if application.status != "pending":
-            return Response(
-                {"error": "Application is not pending"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        # Update application
-        application.status = "selected"
-        application.selected_at = timezone.now()
-        application.response_deadline = timezone.now() + timedelta(days=2)
-        application.save()
-
-        # Update gig
-        gig = application.gig
-        gig.selected_teacher = application.teacher
-        gig.status = "confirmation_pending"
-        gig.save()
-
-        # Notify teacher
-        NotificationService.send_notification(
-            user=application.teacher,
-            notification_type="teacher_selected",
-            title="You've Been Selected!",
-            message=f"You were selected for {gig.title}. Please respond within 48 hours.",
-            link=f"/teacher/applications/{application.id}",
-            metadata={
-                "gig_id": gig.id,
-                "application_id": application.id,
-                "response_deadline": application.response_deadline.isoformat(),
-            },
-        )
-
-        return Response({"status": "selected"})
+        serializer = self.get_serializer(application)
+        return Response(serializer.data, status=status.HTTP_200_OK)

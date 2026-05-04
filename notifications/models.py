@@ -4,17 +4,30 @@ from accounts.models import User
 
 class Notification(models.Model):
     TYPE_CHOICES = [
+        # Application notifications
         ("application_received", "Application Received"),
         ("teacher_selected", "Teacher Selected"),
         ("selection_accepted", "Selection Accepted"),
         ("selection_rejected", "Selection Rejected"),
-        ("payment_initiated", "Payment Initiated"),
-        ("escrow_funded", "Escrow Funded"),
+        # Gig notifications
         ("gig_started", "Gig Started"),
-        ("completion_requested", "Completion Requested"),
-        ("payment_released", "Payment Released"),
+        ("gig_completed", "Gig Completed"),
         ("gig_cancelled", "Gig Cancelled"),
+        # Admin notifications
+        ("completion_requested", "Completion Requested"),
         ("dispute_opened", "Dispute Opened"),
+        ("dispute_resolved", "Dispute Resolved"),
+        # Premium notifications (for teachers)
+        ("premium_activated", "Premium Activated"),
+        ("premium_expiring", "Premium Expiring Soon"),
+        ("premium_expired", "Premium Expired"),
+        # Document notifications
+        ("document_verified", "Document Verified"),
+        ("document_rejected", "Document Rejected"),
+        ("document_uploaded", "Document Uploaded"),
+        # System notifications (for all)
+        ("system_announcement", "System Announcement"),
+        ("test", "Test Notification"),
     ]
 
     user = models.ForeignKey(

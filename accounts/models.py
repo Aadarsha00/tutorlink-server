@@ -42,6 +42,19 @@ class User(AbstractBaseUser, PermissionsMixin):
     role = models.CharField(max_length=10, choices=ROLE_CHOICES)
     first_name = models.CharField(max_length=150, blank=True)
     last_name = models.CharField(max_length=150, blank=True)
+    profile_picture = models.ImageField(
+        upload_to="profile_pictures/", default="profile_pictures/pfp.jpg"
+    )
+    profile_picture_verified = models.BooleanField(null=True, blank=True, default=None)
+    profile_picture_rejection_reason = models.TextField(blank=True)
+    profile_picture_verified_at = models.DateTimeField(null=True, blank=True)
+    profile_picture_verified_by = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="verified_profile_pictures",
+    )
 
     is_active = models.BooleanField(default=False)
     is_email_verified = models.BooleanField(default=False)
@@ -51,7 +64,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     updated_at = models.DateTimeField(auto_now=True)
 
     USERNAME_FIELD = "email"
-    REQUIRED_FIELDS = []
+    REQUIRED_FIELDS = ["first_name", "last_name", "role"]
 
     objects = UserManager()
 

@@ -15,7 +15,7 @@ class UserAdmin(BaseUserAdmin):
         "role_badge",
         "full_name",
         "is_active_badge",
-        "is_email_verified_badge",
+        "email_verified_badge",
         "is_staff",
         "created_at",
     )
@@ -38,9 +38,9 @@ class UserAdmin(BaseUserAdmin):
             {
                 "fields": (
                     "is_active",
+                    "is_email_verified",
                     "is_staff",
                     "is_superuser",
-                    "is_email_verified",
                     "groups",
                     "user_permissions",
                 ),
@@ -62,6 +62,7 @@ class UserAdmin(BaseUserAdmin):
                     "first_name",
                     "last_name",
                     "is_active",
+                    "is_email_verified",
                     "is_staff",
                 ),
             },
@@ -112,25 +113,33 @@ class UserAdmin(BaseUserAdmin):
 
     is_active_badge.short_description = "Active"
 
-    def is_email_verified_badge(self, obj):
+    def email_verified_badge(self, obj):
         if obj.is_email_verified:
             return format_html(
                 '<span style="color: green; font-size: 18px;">{}</span>',
                 "✓",
             )
         return format_html(
-            '<span style="color: orange; font-size: 18px;">{}</span>',
+            '<span style="color: red; font-size: 18px;">{}</span>',
             "✗",
         )
 
-    is_email_verified_badge.short_description = "Verified"
+    email_verified_badge.short_description = "Email Verified"
 
-    actions = ["activate_users", "deactivate_users", "verify_emails"]
+    actions = [
+        "activate_users",
+        "deactivate_users",
+        "verify_emails",
+        "unverify_emails",
+    ]
 
     def activate_users(self, request, queryset):
         """Bulk activate users"""
-        updated = queryset.update(is_active=True)
-        self.message_user(request, f"{updated} user(s) successfully activated.")
+        updated = queryset.update(is_active=True, is_email_verified=True)
+        self.message_user(
+            request,
+            f"{updated} user(s) successfully activated and email verified.",
+        )
 
     activate_users.short_description = "Activate selected users"
 
@@ -142,8 +151,19 @@ class UserAdmin(BaseUserAdmin):
     deactivate_users.short_description = "Deactivate selected users"
 
     def verify_emails(self, request, queryset):
-        """Bulk verify user emails"""
+        """Bulk mark emails as verified"""
         updated = queryset.update(is_email_verified=True)
-        self.message_user(request, f"{updated} user email(s) successfully verified.")
+        self.message_user(request, f"{updated} user email(s) marked as verified.")
 
-    verify_emails.short_description = "Verify selected user emails"
+    verify_emails.short_description = "Mark selected emails as verified"
+
+    def unverify_emails(self, request, queryset):
+        """Bulk mark emails as unverified"""
+        updated = queryset.update(is_active=False, is_email_verified=False)
+        self.message_user(
+            request,
+            f"{updated} user email(s) marked as unverified and deactivated.",
+        )
+
+    unverify_emails.short_description = "Mark selected emails as unverified and inactive"
+
