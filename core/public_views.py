@@ -9,6 +9,8 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from accounts.models import User
+from gigs.models import Gig
+from gigs.serializers import GigListSerializer
 from profiles.models import Rating, Subject, TeacherProfile
 from profiles.serializers import SubjectSerializer, TeacherProfileSerializer
 
@@ -69,6 +71,12 @@ def landing_data(request):
         or 0
     )
 
+    latest_gigs = (
+        Gig.objects.select_related("parent")
+        .filter(status="open", parent__is_active=True)
+        .order_by("-created_at")[:6]
+    )
+
     return Response(
         {
             "stats": {
@@ -85,6 +93,11 @@ def landing_data(request):
             ).data,
             "hero_tutors": TeacherProfileSerializer(
                 hero_tutors,
+                many=True,
+                context={"request": request},
+            ).data,
+            "latest_gigs": GigListSerializer(
+                latest_gigs,
                 many=True,
                 context={"request": request},
             ).data,
