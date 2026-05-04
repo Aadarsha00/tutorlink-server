@@ -9,6 +9,8 @@ urlpatterns = [
     # API v1 endpoints
     path("api/v1/public/landing/", public_views.landing_data),
     path("api/v1/public/tutors/", public_views.tutors),
+    path("api/v1/public/gigs/", public_views.gigs),
+    path("api/v1/public/gigs/<int:gig_id>/", public_views.gig_detail),
     path("api/v1/public/testimonials/", public_views.testimonials),
     path("api/v1/public/contact/", public_views.contact_message),
     path("api/v1/", include("accounts.urls")),

@@ -129,6 +129,7 @@ class GigListSerializer(serializers.ModelSerializer):
             "title",
             "subject",
             "grade",
+            "description",
             "budget_min",
             "budget_max",
             "duration_weeks",
@@ -182,3 +183,28 @@ class GigListSerializer(serializers.ModelSerializer):
 
     def get_applications_count(self, obj):
         return obj.applications.count()
+
+
+class PublicGigDetailSerializer(GigListSerializer):
+    class Meta:
+        model = Gig
+        fields = [
+            "id",
+            "parent",
+            "parent_profile",
+            "title",
+            "subject",
+            "grade",
+            "description",
+            "budget_min",
+            "budget_max",
+            "schedule",
+            "location",
+            "duration_weeks",
+            "sessions_per_week",
+            "status",
+            "created_at",
+            "applications_count",
+            "progress_percentage",
+            "days_remaining",
+        ]

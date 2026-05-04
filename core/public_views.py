@@ -3,6 +3,7 @@ import logging
 from django.conf import settings
 from django.core.mail import send_mail
 from django.db.models import Avg, Count, F, Q
+from django.shortcuts import get_object_or_404
 from rest_framework import serializers, status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
@@ -10,7 +11,7 @@ from rest_framework.response import Response
 
 from accounts.models import User
 from gigs.models import Gig
-from gigs.serializers import GigListSerializer
+from gigs.serializers import GigListSerializer, PublicGigDetailSerializer
 from profiles.models import Rating, Subject, TeacherProfile
 from profiles.serializers import SubjectSerializer, TeacherProfileSerializer
 
@@ -103,6 +104,43 @@ def landing_data(request):
             ).data,
         }
     )
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def gigs(request):
+    queryset = (
+        Gig.objects.select_related("parent")
+        .filter(status="open", parent__is_active=True)
+        .order_by("-created_at")
+    )
+
+    serializer = GigListSerializer(
+        queryset,
+        many=True,
+        context={"request": request},
+    )
+    return Response(
+        {
+            "count": queryset.count(),
+            "next": None,
+            "previous": None,
+            "results": serializer.data,
+        }
+    )
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def gig_detail(request, gig_id):
+    gig = get_object_or_404(
+        Gig.objects.select_related("parent"),
+        id=gig_id,
+        status="open",
+        parent__is_active=True,
+    )
+    serializer = PublicGigDetailSerializer(gig, context={"request": request})
+    return Response(serializer.data)
 
 
 def _profile_picture_url(user, request):
