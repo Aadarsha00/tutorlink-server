@@ -12,6 +12,7 @@ from .models import (
     VerificationDocument,
     ParentProfile,
 )
+from .verification import sync_teacher_verification_status
 
 
 # ============================================
@@ -62,7 +63,6 @@ class VerificationDocumentInline(admin.TabularInline):
     fields = [
         "document_type",
         "file_name",
-        "file_url",
         "file_size",
         "verified",
         "verified_at",
@@ -440,14 +440,29 @@ class VerificationDocumentAdmin(admin.ModelAdmin):
 
     actions = ["verify_documents", "unverify_documents"]
 
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+        sync_teacher_verification_status(obj.teacher)
+
     def verify_documents(self, request, queryset):
-        updated = queryset.update(verified=True, verified_at=timezone.now())
+        teacher_ids = list(queryset.values_list("teacher_id", flat=True).distinct())
+        updated = queryset.update(
+            verified=True,
+            verified_at=timezone.now(),
+            verified_by=request.user,
+            rejection_reason="",
+        )
+        for teacher in TeacherProfile.objects.filter(id__in=teacher_ids):
+            sync_teacher_verification_status(teacher)
         self.message_user(request, f"{updated} document(s) verified successfully.")
 
     verify_documents.short_description = "Verify selected documents"
 
     def unverify_documents(self, request, queryset):
+        teacher_ids = list(queryset.values_list("teacher_id", flat=True).distinct())
         updated = queryset.update(verified=False, verified_at=None)
+        for teacher in TeacherProfile.objects.filter(id__in=teacher_ids):
+            sync_teacher_verification_status(teacher)
         self.message_user(request, f"{updated} document(s) unverified.")
 
     unverify_documents.short_description = "Unverify selected documents"

@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     "profiles",
     "gigs",
     "applications",
+    "jobs",
     "payments",
     "notifications",
 ]
@@ -213,9 +214,9 @@ EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 EMAIL_HOST = "smtp.gmail.com"
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
-EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
-EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
-DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER)
+EMAIL_HOST_USER = "codebits.ctrlbits@gmail.com"
+EMAIL_HOST_PASSWORD = "cnzmquyauvnxewof"
+DEFAULT_FROM_EMAIL = "codebits.ctrlbits@gmail.com"
 
 
 CORS_ALLOW_ALL_ORIGINS = True
@@ -238,6 +239,12 @@ CORS_ALLOW_HEADERS = [
     "x-csrftoken",
     "x-requested-with",
 ]
+
+# ============================================
+# SECURITY HEADERS
+# ============================================
+# Allow same-origin framing for document previews (PDFs in iframes)
+X_FRAME_OPTIONS = "SAMEORIGIN"
 
 # ============================================
 # SITE CONFIGURATION (for email links)

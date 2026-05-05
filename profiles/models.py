@@ -243,7 +243,7 @@ class VerificationDocument(models.Model):
         ("citizenship_front", "Citizenship Front"),
         ("citizenship_back", "Citizenship Back"),
         ("academic", "Academic Certificate"),
-        ("experience", "Experience Letter"),
+        ("cv", "CV"),
         ("other", "Other"),
     ]
 

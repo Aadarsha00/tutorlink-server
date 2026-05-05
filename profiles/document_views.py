@@ -18,6 +18,10 @@ from profiles.serializers import (
     VerificationDocumentSerializer,
     ParentVerificationDocumentSerializer,
 )
+from profiles.verification import (
+    sync_parent_verification_status,
+    sync_teacher_verification_status,
+)
 
 import logging
 
@@ -75,7 +79,7 @@ def upload_teacher_document(request):
         "citizenship_front",
         "citizenship_back",
         "academic",
-        "experience",
+        "cv",
         "other",
     ]
     if document_type not in valid_types:
@@ -106,6 +110,7 @@ def upload_teacher_document(request):
             file_name=file.name,
             file_size=file.size,
         )
+        sync_teacher_verification_status(teacher_profile)
 
         logger.info(
             f"✅ Document uploaded: ID={document.id}, Teacher={request.user.email}, "
@@ -184,7 +189,9 @@ def delete_teacher_document(request, document_id):
         )
 
     document_type = document.document_type
+    teacher_profile = document.teacher
     document.delete()
+    sync_teacher_verification_status(teacher_profile)
 
     logger.info(
         f"🗑️ Document deleted: ID={document_id}, Teacher={request.user.email}, "
@@ -290,6 +297,7 @@ def upload_parent_document(request):
             file_name=file.name,
             file_size=file.size,
         )
+        sync_parent_verification_status(parent_profile)
 
         logger.info(
             f"✅ Parent document uploaded: ID={document.id}, Parent={request.user.email}, "
@@ -370,7 +378,9 @@ def delete_parent_document(request, document_id):
         )
 
     document_type = document.document_type
+    parent_profile = document.parent
     document.delete()
+    sync_parent_verification_status(parent_profile)
 
     logger.info(
         f"🗑️ Parent document deleted: ID={document_id}, Parent={request.user.email}, "
@@ -450,7 +460,7 @@ def check_profile_completion(request):
                 document_type="citizenship_back"
             ).exists()
             has_academic = documents.filter(document_type="academic").exists()
-            has_experience = documents.filter(document_type="experience").exists()
+            has_cv = documents.filter(document_type="cv").exists()
 
             missing_fields = [
                 field for field, complete in required_fields.items() if not complete
@@ -462,8 +472,8 @@ def check_profile_completion(request):
                 missing_documents.append("citizenship_back")
             if not has_academic:
                 missing_documents.append("academic")
-            if not has_experience:
-                missing_documents.append("experience")
+            if not has_cv:
+                missing_documents.append("cv")
 
             is_complete = len(missing_fields) == 0 and len(missing_documents) == 0
 
@@ -484,7 +494,7 @@ def check_profile_completion(request):
                         "citizenship_front": has_citizenship_front,
                         "citizenship_back": has_citizenship_back,
                         "academic": has_academic,
-                        "experience": has_experience,
+                        "cv": has_cv,
                     },
                     "document_count": documents.count(),
                 }

@@ -9,6 +9,7 @@ urlpatterns = [
     # API v1 endpoints
     path("api/v1/public/landing/", public_views.landing_data),
     path("api/v1/public/tutors/", public_views.tutors),
+    path("api/v1/public/tutors/<int:tutor_id>/", public_views.tutor_detail),
     path("api/v1/public/gigs/", public_views.gigs),
     path("api/v1/public/gigs/<int:gig_id>/", public_views.gig_detail),
     path("api/v1/public/testimonials/", public_views.testimonials),
@@ -17,6 +18,7 @@ urlpatterns = [
     path("api/v1/profiles/", include("profiles.urls")),
     path("api/v1/", include("gigs.urls")),
     path("api/v1/", include("applications.urls")),
+    path("api/v1/", include("jobs.urls")),
     path("api/v1/payments/", include("payments.urls")),
     path("api/v1/notifications/", include("notifications.urls")),
 ]

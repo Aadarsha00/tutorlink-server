@@ -17,6 +17,10 @@ from profiles.serializers import (
     VerificationDocumentSerializer,
     ParentVerificationDocumentSerializer,
 )
+from profiles.verification import (
+    sync_parent_verification_status,
+    sync_teacher_verification_status,
+)
 import logging
 
 logger = logging.getLogger(__name__)
@@ -241,10 +245,13 @@ class AdminTeacherDocumentViewSet(viewsets.ReadOnlyModelViewSet):
         document.verified_by = request.user
         document.notes = notes
 
-        if not verified:
+        if verified:
+            document.rejection_reason = ""
+        else:
             document.rejection_reason = rejection_reason
 
         document.save()
+        sync_teacher_verification_status(document.teacher)
 
         teacher = document.teacher.user
 
@@ -334,10 +341,13 @@ class AdminParentDocumentViewSet(viewsets.ReadOnlyModelViewSet):
         document.verified_by = request.user
         document.notes = notes
 
-        if not verified:
+        if verified:
+            document.rejection_reason = ""
+        else:
             document.rejection_reason = rejection_reason
 
         document.save()
+        sync_parent_verification_status(document.parent)
 
         parent = document.parent.user
 

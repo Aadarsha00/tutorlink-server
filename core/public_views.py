@@ -51,16 +51,17 @@ def landing_data(request):
             "-is_premium",
             "-rating_count",
             "-created_at",
-        )[:4]
+        )[:3]
     )
 
     hero_tutors = (
         TeacherProfile.objects.select_related("user")
         .prefetch_related("subjects", "grades")
         .filter(user__is_active=True)
+        .filter(verification_status="verified")
         .filter(user__profile_picture_verified=True)
         .exclude(user__profile_picture="")
-        .order_by("-is_premium", "verification_status", "-created_at")[:3]
+        .order_by("-is_premium", "-created_at")[:3]
     )
 
     average_rating = (
@@ -75,7 +76,7 @@ def landing_data(request):
     latest_gigs = (
         Gig.objects.select_related("parent")
         .filter(status="open", parent__is_active=True)
-        .order_by("-created_at")[:6]
+        .order_by("-created_at")[:3]
     )
 
     return Response(
@@ -167,6 +168,19 @@ def _serialize_testimonial(rating, request):
     }
 
 
+def _serialize_tutor_review(rating):
+    return {
+        "id": rating.id,
+        "parent_name": rating.rater.get_full_name() or "Parent",
+        "score": rating.score,
+        "review": rating.review,
+        "gig_title": rating.gig.title if rating.gig else "",
+        "subject": rating.gig.subject if rating.gig else "",
+        "grade": rating.gig.grade if rating.gig else "",
+        "created_at": rating.created_at,
+    }
+
+
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def testimonials(request):
@@ -189,6 +203,16 @@ def tutors(request):
         TeacherProfile.objects.select_related("user")
         .prefetch_related("subjects", "grades")
         .filter(user__is_active=True, verification_status="verified")
+        .annotate(
+            average_score=Avg(
+                "user__ratings_received__score",
+                filter=Q(user__ratings_received__rater_type="parent"),
+            ),
+            rating_count=Count(
+                "user__ratings_received",
+                filter=Q(user__ratings_received__rater_type="parent"),
+            ),
+        )
     )
 
     search = request.query_params.get("search")
@@ -215,20 +239,18 @@ def tutors(request):
     min_rating = request.query_params.get("min_rating")
     if min_rating:
         try:
-            profiles = [
-                profile
-                for profile in profiles.distinct()
-                if float(profile.average_rating) >= float(min_rating)
-            ]
+            profiles = profiles.filter(average_score__gte=float(min_rating))
         except ValueError:
             profiles = profiles.distinct()
-    else:
-        profiles = profiles.distinct().order_by(
-            "-is_premium", "-created_at"
-        )
 
-    if not isinstance(profiles, list):
-        profiles = list(profiles)
+    profiles = profiles.distinct().order_by(
+        F("average_score").desc(nulls_last=True),
+        "-is_premium",
+        "-rating_count",
+        "-created_at",
+    )
+
+    profiles = list(profiles)
 
     locations = (
         TeacherProfile.objects.filter(
@@ -262,6 +284,30 @@ def tutors(request):
             "locations": list(locations),
         }
     )
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def tutor_detail(request, tutor_id):
+    profile = get_object_or_404(
+        TeacherProfile.objects.select_related("user").prefetch_related(
+            "subjects", "grades"
+        ),
+        id=tutor_id,
+        user__is_active=True,
+        verification_status="verified",
+    )
+
+    serializer = TeacherProfileSerializer(profile, context={"request": request})
+    reviews = (
+        Rating.objects.select_related("rater", "gig")
+        .filter(ratee=profile.user, rater_type="parent")
+        .exclude(review="")
+        .order_by("-score", "-created_at")[:8]
+    )
+    data = serializer.data
+    data["reviews"] = [_serialize_tutor_review(rating) for rating in reviews]
+    return Response(data)
 
 
 @api_view(["POST"])
