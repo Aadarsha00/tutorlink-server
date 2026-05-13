@@ -42,4 +42,19 @@ urlpatterns = [
         ApplicationViewSet.as_view({"post": "reject"}),
         name="application-reject",
     ),
+    path(
+        "applications/<int:pk>/cancel-match/",
+        ApplicationViewSet.as_view({"post": "cancel_match"}),
+        name="application-cancel-match",
+    ),
+    path(
+        "applications/<int:pk>/propose-rate/",
+        ApplicationViewSet.as_view({"post": "propose_rate"}),
+        name="application-propose-rate",
+    ),
+    path(
+        "applications/<int:pk>/respond-rate/",
+        ApplicationViewSet.as_view({"post": "respond_rate"}),
+        name="application-respond-rate",
+    ),
 ]

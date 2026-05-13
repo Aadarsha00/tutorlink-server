@@ -442,6 +442,7 @@ def check_profile_completion(request):
             required_fields = {
                 "full_name": bool(profile.full_name),
                 "phone": bool(profile.phone),
+                "citizenship_number": bool(profile.citizenship_number),
                 "education": bool(profile.education),
                 "experience_years": profile.experience_years >= 0,
                 "subjects": profile.subjects.exists(),
@@ -518,6 +519,7 @@ def check_profile_completion(request):
             required_fields = {
                 "full_name": bool(profile.full_name),
                 "phone": bool(profile.phone),
+                "citizenship_number": bool(profile.citizenship_number),
                 "location": bool(profile.location),
                 "address": bool(profile.address),
             }

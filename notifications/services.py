@@ -156,6 +156,10 @@ class NotificationService:
             "teacher_selected",
             "selection_accepted",
             "selection_rejected",
+            "match_cancelled",
+            "rate_change_requested",
+            "rate_change_approved",
+            "rate_change_rejected",
             # Disputes (for all parties)
             "dispute_opened",
             "dispute_resolved",
@@ -302,6 +306,110 @@ class ApplicationNotificationService:
             message=f"Teacher declined your selection for {application.gig.title}. You can select another applicant.",
             link=f"/gigs/{application.gig.id}",
             metadata={"gig_id": application.gig.id, "application_id": application.id},
+        )
+
+    @classmethod
+    def notify_match_cancelled(cls, application, cancelled_by, reason: str = ""):
+        """Notify the other side when an accepted pre-payment match is cancelled."""
+        receiver = (
+            application.teacher
+            if cancelled_by == application.gig.parent
+            else application.gig.parent
+        )
+
+    @classmethod
+    def notify_rate_change_requested(cls, application):
+        """Notify the other side when a rate change is proposed."""
+        proposer = application.rate_change_proposed_by
+        receiver = application.gig.parent if proposer == application.teacher else application.teacher
+
+        NotificationService.send_notification(
+            user=receiver,
+            notification_type="rate_change_requested",
+            title="Rate Change Requested",
+            message=(
+                f"{proposer.get_full_name() or proposer.email} proposed Rs. "
+                f"{application.rate_change_proposed_rate}/session for {application.gig.title}."
+            ),
+            link=(
+                f"/parent/gig/{application.gig.id}/applications"
+                if receiver.role == "parent"
+                else "/teacher/applications"
+            ),
+            metadata={
+                "gig_id": application.gig.id,
+                "application_id": application.id,
+                "proposed_rate": str(application.rate_change_proposed_rate),
+            },
+        )
+
+    @classmethod
+    def notify_rate_change_approved(cls, application, approved_by, old_rate):
+        receiver = application.teacher if approved_by == application.gig.parent else application.gig.parent
+        NotificationService.send_notification(
+            user=receiver,
+            notification_type="rate_change_approved",
+            title="Rate Change Approved",
+            message=(
+                f"The rate for {application.gig.title} changed from Rs. {old_rate} "
+                f"to Rs. {application.proposed_rate}/session."
+            ),
+            link=(
+                f"/parent/gig/{application.gig.id}/applications"
+                if receiver.role == "parent"
+                else "/teacher/applications"
+            ),
+            metadata={
+                "gig_id": application.gig.id,
+                "application_id": application.id,
+                "old_rate": str(old_rate),
+                "new_rate": str(application.proposed_rate),
+            },
+        )
+
+    @classmethod
+    def notify_rate_change_rejected(cls, application, rejected_by, rejected_rate):
+        receiver = application.teacher if rejected_by == application.gig.parent else application.gig.parent
+        NotificationService.send_notification(
+            user=receiver,
+            notification_type="rate_change_rejected",
+            title="Rate Change Rejected",
+            message=(
+                f"The Rs. {rejected_rate}/session rate change for "
+                f"{application.gig.title} was rejected."
+            ),
+            link=(
+                f"/parent/gig/{application.gig.id}/applications"
+                if receiver.role == "parent"
+                else "/teacher/applications"
+            ),
+            metadata={
+                "gig_id": application.gig.id,
+                "application_id": application.id,
+                "rejected_rate": str(rejected_rate),
+            },
+        )
+        cancelled_by_name = cancelled_by.get_full_name() or cancelled_by.email
+        message = f"{cancelled_by_name} cancelled the match for {application.gig.title}."
+        if reason:
+            message = f"{message} Reason: {reason}"
+
+        NotificationService.send_notification(
+            user=receiver,
+            notification_type="match_cancelled",
+            title="Match Cancelled",
+            message=message,
+            link=(
+                f"/parent/gig/{application.gig.id}/applications"
+                if receiver.role == "parent"
+                else "/teacher/applications"
+            ),
+            metadata={
+                "gig_id": application.gig.id,
+                "application_id": application.id,
+                "cancelled_by": cancelled_by.id,
+                "reason": reason,
+            },
         )
 
 

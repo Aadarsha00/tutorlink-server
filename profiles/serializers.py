@@ -344,6 +344,7 @@ class TeacherProfileSerializer(serializers.ModelSerializer):
             "user",
             "full_name",
             "phone",
+            "citizenship_number",
             "education",
             "experience_years",
             "subjects",
@@ -468,6 +469,10 @@ class TeacherProfileSerializer(serializers.ModelSerializer):
             if not data.get("kyc_photo"):
                 raise serializers.ValidationError(
                     {"kyc_photo": "KYC verification photo is required"}
+                )
+            if not data.get("citizenship_number"):
+                raise serializers.ValidationError(
+                    {"citizenship_number": "Citizenship number or NID is required"}
                 )
             if not data.get("subject_ids"):
                 raise serializers.ValidationError(
@@ -601,6 +606,7 @@ class ParentProfileSerializer(serializers.ModelSerializer):
             "user",
             "full_name",
             "phone",
+            "citizenship_number",
             "location",
             "address",
             "kyc_photo",  # Write-only
@@ -635,10 +641,15 @@ class ParentProfileSerializer(serializers.ModelSerializer):
         }
 
     def validate(self, data):
-        if self.instance is None and not data.get("kyc_photo"):
-            raise serializers.ValidationError(
-                {"kyc_photo": "KYC verification photo is required"}
-            )
+        if self.instance is None:
+            if not data.get("kyc_photo"):
+                raise serializers.ValidationError(
+                    {"kyc_photo": "KYC verification photo is required"}
+                )
+            if not data.get("citizenship_number"):
+                raise serializers.ValidationError(
+                    {"citizenship_number": "Citizenship number or NID is required"}
+                )
         return data
 
     def update(self, instance, validated_data):

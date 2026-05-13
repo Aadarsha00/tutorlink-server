@@ -114,6 +114,7 @@ class TeacherProfile(models.Model):
     )
     full_name = models.CharField(max_length=200)
     phone = models.CharField(max_length=20)
+    citizenship_number = models.CharField(max_length=100, blank=True)
     education = models.TextField()
     experience_years = models.IntegerField()
 
@@ -329,6 +330,7 @@ class ParentProfile(models.Model):
     )
     full_name = models.CharField(max_length=200)
     phone = models.CharField(max_length=20)
+    citizenship_number = models.CharField(max_length=100, blank=True)
     location = models.CharField(max_length=200)
     address = models.TextField()
 

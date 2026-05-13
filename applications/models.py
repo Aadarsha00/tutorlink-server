@@ -10,6 +10,7 @@ class Application(models.Model):
         ("accepted", "Accepted"),
         ("rejected", "Rejected"),
         ("withdrawn", "Withdrawn"),
+        ("cancelled", "Cancelled"),
         ("expired", "Expired"),
     ]
 
@@ -23,6 +24,26 @@ class Application(models.Model):
     selected_at = models.DateTimeField(null=True, blank=True)
     response_deadline = models.DateTimeField(null=True, blank=True)
     responded_at = models.DateTimeField(null=True, blank=True)
+    match_cancelled_at = models.DateTimeField(null=True, blank=True)
+    match_cancelled_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="cancelled_matches",
+    )
+    match_cancel_reason = models.CharField(max_length=300, blank=True)
+    rate_change_proposed_rate = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True
+    )
+    rate_change_proposed_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="rate_change_proposals",
+    )
+    rate_change_proposed_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

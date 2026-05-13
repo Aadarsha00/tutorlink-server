@@ -27,6 +27,12 @@ class ApplicationSerializer(serializers.ModelSerializer):
             "selected_at",
             "response_deadline",
             "responded_at",
+            "match_cancelled_at",
+            "match_cancelled_by",
+            "match_cancel_reason",
+            "rate_change_proposed_rate",
+            "rate_change_proposed_by",
+            "rate_change_proposed_at",
             "created_at",
             "updated_at",
         ]
@@ -40,6 +46,12 @@ class ApplicationSerializer(serializers.ModelSerializer):
             "selected_at",
             "response_deadline",
             "responded_at",
+            "match_cancelled_at",
+            "match_cancelled_by",
+            "match_cancel_reason",
+            "rate_change_proposed_rate",
+            "rate_change_proposed_by",
+            "rate_change_proposed_at",
             "created_at",
             "updated_at",
         ]
@@ -128,6 +140,12 @@ class ApplicationListSerializer(serializers.ModelSerializer):
             "selected_at",
             "response_deadline",
             "responded_at",
+            "match_cancelled_at",
+            "match_cancelled_by",
+            "match_cancel_reason",
+            "rate_change_proposed_rate",
+            "rate_change_proposed_by",
+            "rate_change_proposed_at",
         ]
 
     def get_teacher_profile(self, obj):
@@ -153,4 +171,5 @@ class ApplicationListSerializer(serializers.ModelSerializer):
             "budget_min": float(obj.gig.budget_min),
             "budget_max": float(obj.gig.budget_max),
             "location": obj.gig.location,
+            "status": obj.gig.status,
         }

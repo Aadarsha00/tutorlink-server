@@ -9,6 +9,10 @@ class Notification(models.Model):
         ("teacher_selected", "Teacher Selected"),
         ("selection_accepted", "Selection Accepted"),
         ("selection_rejected", "Selection Rejected"),
+        ("match_cancelled", "Match Cancelled"),
+        ("rate_change_requested", "Rate Change Requested"),
+        ("rate_change_approved", "Rate Change Approved"),
+        ("rate_change_rejected", "Rate Change Rejected"),
         # Gig notifications
         ("gig_started", "Gig Started"),
         ("gig_completed", "Gig Completed"),
@@ -25,6 +29,8 @@ class Notification(models.Model):
         ("document_verified", "Document Verified"),
         ("document_rejected", "Document Rejected"),
         ("document_uploaded", "Document Uploaded"),
+        # Messaging notifications
+        ("message_received", "Message Received"),
         # System notifications (for all)
         ("system_announcement", "System Announcement"),
         ("test", "Test Notification"),

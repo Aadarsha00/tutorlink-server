@@ -1,3 +1,6 @@
+import os
+
+from django.conf import settings
 from rest_framework import serializers
 from django.utils import timezone
 from accounts.models import User
@@ -106,6 +109,7 @@ class JobApplicationSerializer(serializers.ModelSerializer):
     teacher = serializers.PrimaryKeyRelatedField(read_only=True)
     teacher_profile = serializers.SerializerMethodField()
     cv_document = serializers.SerializerMethodField()
+    cv_file = serializers.FileField(write_only=True, required=False)
 
     class Meta:
         model = JobApplication
@@ -116,6 +120,7 @@ class JobApplicationSerializer(serializers.ModelSerializer):
             "teacher",
             "teacher_profile",
             "cv_document",
+            "cv_file",
             "cover_letter",
             "status",
             "admin_notes",
@@ -160,6 +165,26 @@ class JobApplicationSerializer(serializers.ModelSerializer):
     def get_cv_document(self, obj):
         return VerificationDocumentSerializer(obj.cv_document, context=self.context).data
 
+    def validate_cv_file(self, value):
+        max_size = getattr(settings, "MAX_DOCUMENT_SIZE", 5 * 1024 * 1024)
+        if value.size > max_size:
+            raise serializers.ValidationError(
+                f"File size exceeds {max_size / (1024 * 1024):.0f}MB limit"
+            )
+
+        ext = os.path.splitext(value.name)[1].lower()
+        allowed_extensions = getattr(
+            settings,
+            "ALLOWED_DOCUMENT_EXTENSIONS",
+            [".pdf", ".jpg", ".jpeg", ".png", ".doc", ".docx"],
+        )
+        if ext not in allowed_extensions:
+            raise serializers.ValidationError(
+                f"File type {ext} not allowed. Allowed types: {', '.join(allowed_extensions)}"
+            )
+
+        return value
+
     def _latest_cv(self, user):
         if not hasattr(user, "teacher_profile"):
             return None
@@ -173,6 +198,35 @@ class JobApplicationSerializer(serializers.ModelSerializer):
             .first()
         )
 
+    def _latest_profile_cv(self, user):
+        if not hasattr(user, "teacher_profile"):
+            return None
+        return (
+            VerificationDocument.objects.filter(
+                teacher=user.teacher_profile,
+                document_type="cv",
+            )
+            .order_by("-verified", "-uploaded_at")
+            .first()
+        )
+
+    def _required_documents_except_cv_verified(self, user):
+        if not hasattr(user, "teacher_profile"):
+            return False
+        required_document_types = ["citizenship_front", "citizenship_back", "academic"]
+        for document_type in required_document_types:
+            latest_document = (
+                VerificationDocument.objects.filter(
+                    teacher=user.teacher_profile,
+                    document_type=document_type,
+                )
+                .order_by("-uploaded_at")
+                .first()
+            )
+            if not latest_document or latest_document.verified is not True:
+                return False
+        return True
+
     def validate(self, attrs):
         request = self.context.get("request")
         user = request.user if request else None
@@ -181,7 +235,14 @@ class JobApplicationSerializer(serializers.ModelSerializer):
         if user and user.role != "teacher":
             raise serializers.ValidationError("Only teachers can apply for jobs.")
 
-        if user and not teacher_documents_verified(user):
+        cv_file = attrs.get("cv_file")
+
+        if user and cv_file:
+            if not self._required_documents_except_cv_verified(user):
+                raise serializers.ValidationError(
+                    "Your identity and academic documents must be verified before you can apply for jobs."
+                )
+        elif user and not teacher_documents_verified(user):
             raise serializers.ValidationError(
                 "Your documents must be verified before you can apply for jobs."
             )
@@ -195,17 +256,27 @@ class JobApplicationSerializer(serializers.ModelSerializer):
         if job and JobApplication.objects.filter(job=job, teacher=user).exists():
             raise serializers.ValidationError("You have already applied to this job.")
 
-        if user and not self._latest_cv(user):
+        if user and not cv_file and not self._latest_profile_cv(user):
             raise serializers.ValidationError(
-                "A verified CV must be uploaded in your teacher profile before applying."
+                "Upload a CV for this application or add a CV to your teacher profile before applying."
             )
 
         return attrs
 
     def create(self, validated_data):
         request = self.context.get("request")
+        cv_file = validated_data.pop("cv_file", None)
         validated_data["teacher"] = request.user
-        validated_data["cv_document"] = self._latest_cv(request.user)
+        if cv_file:
+            validated_data["cv_document"] = VerificationDocument.objects.create(
+                teacher=request.user.teacher_profile,
+                file=cv_file,
+                document_type="cv",
+                file_name=cv_file.name,
+                file_size=cv_file.size,
+            )
+        else:
+            validated_data["cv_document"] = self._latest_profile_cv(request.user)
         return super().create(validated_data)
 
 

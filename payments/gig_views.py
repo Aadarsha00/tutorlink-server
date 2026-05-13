@@ -84,6 +84,18 @@ def initiate_gig_payment(request, gig_id):
             {"error": "Payment already completed"}, status=status.HTTP_400_BAD_REQUEST
         )
 
+    if application.rate_change_proposed_rate:
+        return Response(
+            {"error": "A rate change is waiting for approval before payment."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if not created:
+        payment.amount = platform_fee
+        payment.platform_fee = platform_fee
+        payment.teacher = gig.hired_teacher
+        payment.save(update_fields=["amount", "platform_fee", "teacher"])
+
     # Generate unique purchase_order_id
     purchase_order_id = f"gig_{uuid.uuid4().hex[:20]}"
 
