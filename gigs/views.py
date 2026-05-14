@@ -1,6 +1,7 @@
 from rest_framework import viewsets
 from rest_framework.permissions import IsAuthenticated
-from django.db.models import Q
+from django.db.models import Case, IntegerField, Q, Value, When
+from django.utils import timezone
 
 from .models import Gig
 from .serializers import GigSerializer, GigListSerializer
@@ -21,7 +22,14 @@ class GigViewSet(viewsets.ModelViewSet):
                     Q(status="open") | Q(selected_teacher=user) | Q(hired_teacher=user)
                 )
                 .distinct()
-                .order_by("-created_at")
+                .annotate(
+                    boost_rank=Case(
+                        When(boosted_until__gt=timezone.now(), then=Value(0)),
+                        default=Value(1),
+                        output_field=IntegerField(),
+                    )
+                )
+                .order_by("boost_rank", "-boosted_until", "-created_at")
             )
 
         elif user.role == "admin":

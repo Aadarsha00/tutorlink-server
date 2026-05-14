@@ -4,6 +4,7 @@ from .views import (
     UnreadNotificationCountView,
     MarkNotificationReadView,
     MarkAllNotificationsReadView,
+    AdminBroadcastNotificationView,
 )
 
 urlpatterns = [
@@ -20,5 +21,10 @@ urlpatterns = [
         "read-all/",
         MarkAllNotificationsReadView.as_view(),
         name="notifications-read-all",
+    ),
+    path(
+        "admin/broadcast/",
+        AdminBroadcastNotificationView.as_view(),
+        name="notifications-admin-broadcast",
     ),
 ]

@@ -68,6 +68,9 @@ class MessageService:
     @classmethod
     @transaction.atomic
     def send_message(cls, conversation, sender, body):
+        if not sender.is_active or sender.is_suspended():
+            raise PermissionDenied("Your account is not allowed to send messages.")
+
         if not conversation.has_participant(sender):
             raise PermissionDenied("You do not have access to this conversation.")
 

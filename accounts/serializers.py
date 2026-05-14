@@ -6,6 +6,7 @@ from djoser.serializers import UserSerializer as BaseUserSerializer
 from rest_framework import serializers
 from rest_framework_simplejwt.exceptions import AuthenticationFailed
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from django.utils import timezone
 from .models import User
 
 
@@ -37,12 +38,24 @@ class VerifiedTokenObtainPairSerializer(TokenObtainPairSerializer):
                     code="email_not_verified",
                 )
 
+            if user.is_suspended():
+                raise AuthenticationFailed(
+                    f"Your account is suspended until {user.suspended_until:%Y-%m-%d %H:%M}.",
+                    code="account_suspended",
+                )
+
         data = super().validate(attrs)
 
         if not self.user.is_email_verified:
             raise AuthenticationFailed(
                 "Please verify your email before logging in.",
                 code="email_not_verified",
+            )
+
+        if self.user.is_suspended():
+            raise AuthenticationFailed(
+                f"Your account is suspended until {self.user.suspended_until:%Y-%m-%d %H:%M}.",
+                code="account_suspended",
             )
 
         return data
@@ -96,6 +109,10 @@ class UserSerializer(BaseUserSerializer):
             "profile_picture_verified",
             "profile_picture_rejection_reason",
             "is_active",
+            "moderation_status",
+            "suspended_until",
+            "moderation_reason",
+            "moderated_at",
             "is_email_verified",
             "created_at",
             "updated_at",
@@ -104,12 +121,21 @@ class UserSerializer(BaseUserSerializer):
             "id",
             "email",
             "is_active",
+            "moderation_status",
+            "suspended_until",
+            "moderation_reason",
+            "moderated_at",
             "is_email_verified",
             "profile_picture_verified",
             "profile_picture_rejection_reason",
             "created_at",
             "updated_at",
         )
+
+    moderation_status = serializers.SerializerMethodField()
+
+    def get_moderation_status(self, obj):
+        return obj.moderation_status()
 
     def _id_documents_verified(self, user):
         if user.role == "admin":
@@ -154,14 +180,24 @@ class UserSerializer(BaseUserSerializer):
         )
 
     def update(self, instance, validated_data):
-        identity_fields = {"first_name", "last_name", "profile_picture"}
-        if identity_fields.intersection(validated_data) and not self._id_documents_verified(
+        name_fields = {"first_name", "last_name"}
+        if name_fields.intersection(validated_data):
+            raise serializers.ValidationError(
+                {
+                    "detail": (
+                        "Name cannot be changed after registration because it is "
+                        "used for KYC verification."
+                    )
+                }
+            )
+
+        if "profile_picture" in validated_data and not self._id_documents_verified(
             instance
         ):
             raise serializers.ValidationError(
                 {
                     "detail": (
-                        "Profile information can be changed only after "
+                        "Profile picture can be changed only after "
                         "citizenship front and back are verified."
                     )
                 }
@@ -187,8 +223,16 @@ class CurrentUserSerializer(UserSerializer):
             "id",
             "email",
             "role",
+            "first_name",
+            "last_name",
             "is_active",
+            "moderation_status",
+            "suspended_until",
+            "moderation_reason",
+            "moderated_at",
             "is_email_verified",
+            "profile_picture_verified",
+            "profile_picture_rejection_reason",
             "created_at",
             "updated_at",
         )

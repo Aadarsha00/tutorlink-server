@@ -1,13 +1,12 @@
 import requests
 from django.conf import settings
 
-KHALTI_INIT_URL = "https://dev.khalti.com/api/v2/epayment/initiate/"
-KHALTI_LOOKUP_URL = "https://dev.khalti.com/api/v2/epayment/lookup/"
 
-HEADERS = {
-    "Authorization": f"key {settings.KHALTI_SECRET_KEY}",
-    "Content-Type": "application/json",
-}
+def _headers():
+    return {
+        "Authorization": f"Key {settings.KHALTI_SECRET_KEY}",
+        "Content-Type": "application/json",
+    }
 
 
 def initiate_payment(amount, order_id, order_name, return_url):
@@ -18,16 +17,22 @@ def initiate_payment(amount, order_id, order_name, return_url):
         "purchase_order_id": order_id,
         "purchase_order_name": order_name,
     }
-    res = requests.post(KHALTI_INIT_URL, json=payload, headers=HEADERS)
+    res = requests.post(
+        settings.KHALTI_INITIATE_URL,
+        json=payload,
+        headers=_headers(),
+        timeout=30,
+    )
     res.raise_for_status()
     return res.json()
 
 
 def verify_payment(pidx):
     res = requests.post(
-        KHALTI_LOOKUP_URL,
+        settings.KHALTI_LOOKUP_URL,
         json={"pidx": pidx},
-        headers=HEADERS,
+        headers=_headers(),
+        timeout=30,
     )
     res.raise_for_status()
     return res.json()

@@ -6,6 +6,9 @@ from .views import (
     ConversationMessagesView,
     ConversationReadView,
     MessagingUnreadCountView,
+    AdminConversationListView,
+    AdminConversationMessagesView,
+    AdminMessageDeleteView,
 )
 
 urlpatterns = [
@@ -26,4 +29,19 @@ urlpatterns = [
         name="conversation-read",
     ),
     path("unread-count/", MessagingUnreadCountView.as_view(), name="messaging-unread"),
+    path(
+        "admin/conversations/",
+        AdminConversationListView.as_view(),
+        name="admin-conversation-list",
+    ),
+    path(
+        "admin/conversations/<int:pk>/messages/",
+        AdminConversationMessagesView.as_view(),
+        name="admin-conversation-messages",
+    ),
+    path(
+        "admin/conversations/<int:pk>/messages/<int:message_id>/",
+        AdminMessageDeleteView.as_view(),
+        name="admin-message-delete",
+    ),
 ]

@@ -14,6 +14,7 @@ from profiles.models import (
 )
 from accounts.models import User
 from gigs.models import Gig
+from payments.plans import APPLICATION_FREE_LIMIT
 
 
 # ============================================
@@ -46,13 +47,27 @@ class UserSerializer(serializers.ModelSerializer):
     """Basic user serializer"""
 
     full_name = serializers.SerializerMethodField()
+    moderation_status = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ["id", "email", "first_name", "last_name", "full_name", "role"]
+        fields = [
+            "id",
+            "email",
+            "first_name",
+            "last_name",
+            "full_name",
+            "role",
+            "is_active",
+            "suspended_until",
+            "moderation_status",
+        ]
 
     def get_full_name(self, obj):
         return f"{obj.first_name} {obj.last_name}".strip() or obj.email
+
+    def get_moderation_status(self, obj):
+        return obj.moderation_status()
 
 
 # ============================================
@@ -327,6 +342,9 @@ class TeacherProfileSerializer(serializers.ModelSerializer):
     subjects = serializers.SerializerMethodField()
     grades = serializers.SerializerMethodField()
     kyc_photo_url = serializers.SerializerMethodField()
+    gig_applications_used = serializers.SerializerMethodField()
+    gig_applications_available = serializers.SerializerMethodField()
+    free_gig_application_limit = serializers.SerializerMethodField()
 
     # Write-only fields for creating/updating
     subject_ids = serializers.ListField(
@@ -363,6 +381,9 @@ class TeacherProfileSerializer(serializers.ModelSerializer):
             "verification_status",
             "is_premium",
             "premium_expires_at",
+            "gig_applications_used",
+            "gig_applications_available",
+            "free_gig_application_limit",
             "average_rating",
             "total_reviews",
             "created_at",
@@ -373,6 +394,9 @@ class TeacherProfileSerializer(serializers.ModelSerializer):
             "verification_status",
             "is_premium",
             "premium_expires_at",
+            "gig_applications_used",
+            "gig_applications_available",
+            "free_gig_application_limit",
             "average_rating",
             "total_reviews",
             "created_at",
@@ -392,6 +416,11 @@ class TeacherProfileSerializer(serializers.ModelSerializer):
             "role": user.role,
             "full_name": user.get_full_name(),
             "profile_picture": self._profile_picture_url(user, request),
+            "is_active": user.is_active,
+            "suspended_until": user.suspended_until.isoformat()
+            if user.suspended_until
+            else None,
+            "moderation_status": user.moderation_status(),
         }
 
         # Check if contact details should be hidden
@@ -432,6 +461,19 @@ class TeacherProfileSerializer(serializers.ModelSerializer):
 
     def get_grades(self, obj):
         return [{"id": g.id, "name": g.name} for g in obj.grades.all()]
+
+    def get_gig_applications_used(self, obj):
+        from applications.models import Application
+
+        return Application.objects.filter(teacher=obj.user).count()
+
+    def get_gig_applications_available(self, obj):
+        if obj.is_premium:
+            return None
+        return max(APPLICATION_FREE_LIMIT - self.get_gig_applications_used(obj), 0)
+
+    def get_free_gig_application_limit(self, obj):
+        return APPLICATION_FREE_LIMIT
 
     def validate_subject_ids(self, value):
         """Validate that all subject IDs exist"""
@@ -638,6 +680,11 @@ class ParentProfileSerializer(serializers.ModelSerializer):
             "first_name": user.first_name,
             "last_name": user.last_name,
             "full_name": user.get_full_name(),
+            "is_active": user.is_active,
+            "suspended_until": user.suspended_until.isoformat()
+            if user.suspended_until
+            else None,
+            "moderation_status": user.moderation_status(),
         }
 
     def validate(self, data):

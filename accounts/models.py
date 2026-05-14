@@ -59,6 +59,16 @@ class User(AbstractBaseUser, PermissionsMixin):
     is_active = models.BooleanField(default=False)
     is_email_verified = models.BooleanField(default=False)
     is_staff = models.BooleanField(default=False)
+    suspended_until = models.DateTimeField(null=True, blank=True)
+    moderation_reason = models.TextField(blank=True)
+    moderated_at = models.DateTimeField(null=True, blank=True)
+    moderated_by = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="moderated_users",
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -80,3 +90,15 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     def get_short_name(self):
         return self.first_name
+
+    def is_suspended(self):
+        from django.utils import timezone
+
+        return bool(self.suspended_until and self.suspended_until > timezone.now())
+
+    def moderation_status(self):
+        if not self.is_active:
+            return "blocked"
+        if self.is_suspended():
+            return "suspended"
+        return "active"

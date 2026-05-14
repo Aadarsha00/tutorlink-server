@@ -4,6 +4,8 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from django.utils import timezone
+from datetime import timedelta
 from .models import User
 from .serializers import UserSerializer
 from .permissions import IsAdmin
@@ -160,3 +162,90 @@ class CustomUserViewSet(viewsets.ReadOnlyModelViewSet):
         }
 
         return Response(stats)
+
+    @action(
+        detail=True, methods=["post"], permission_classes=[IsAuthenticated, IsAdmin]
+    )
+    def moderate(self, request, pk=None):
+        """
+        Suspend, block, or reactivate a user.
+
+        POST /users/{id}/moderate/
+        body: { action: "suspend"|"block"|"reactivate", days?: number, reason?: string }
+        """
+        user = self.get_object()
+        action_name = request.data.get("action")
+        reason = (request.data.get("reason") or "").strip()
+
+        if user.role == "admin":
+            return Response(
+                {"error": "Admin accounts cannot be moderated here"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if action_name == "suspend":
+            try:
+                days = int(request.data.get("days", 0))
+            except (TypeError, ValueError):
+                days = 0
+
+            if days <= 0:
+                return Response(
+                    {"error": "Suspension days must be greater than zero"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            user.is_active = True
+            user.suspended_until = timezone.now() + timedelta(days=days)
+            user.moderation_reason = reason
+            user.moderated_at = timezone.now()
+            user.moderated_by = request.user
+            user.save(
+                update_fields=[
+                    "is_active",
+                    "suspended_until",
+                    "moderation_reason",
+                    "moderated_at",
+                    "moderated_by",
+                    "updated_at",
+                ]
+            )
+        elif action_name == "block":
+            user.is_active = False
+            user.suspended_until = None
+            user.moderation_reason = reason
+            user.moderated_at = timezone.now()
+            user.moderated_by = request.user
+            user.save(
+                update_fields=[
+                    "is_active",
+                    "suspended_until",
+                    "moderation_reason",
+                    "moderated_at",
+                    "moderated_by",
+                    "updated_at",
+                ]
+            )
+        elif action_name == "reactivate":
+            user.is_active = True
+            user.suspended_until = None
+            user.moderation_reason = ""
+            user.moderated_at = timezone.now()
+            user.moderated_by = request.user
+            user.save(
+                update_fields=[
+                    "is_active",
+                    "suspended_until",
+                    "moderation_reason",
+                    "moderated_at",
+                    "moderated_by",
+                    "updated_at",
+                ]
+            )
+        else:
+            return Response(
+                {"error": "Action must be suspend, block, or reactivate"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response(self.get_serializer(user).data)

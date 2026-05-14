@@ -22,11 +22,12 @@ urlpatterns = [
     path("api/v1/payments/", include("payments.urls")),
     path("api/v1/notifications/", include("notifications.urls")),
     path("api/v1/messaging/", include("messaging.urls")),
+    path("api/v1/reports/", include("reports.urls")),
 ]
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
     urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
 
-admin.site.site_header = "TutorLink Admin"
-admin.site.site_title = "TutorLink Admin Portal"
-admin.site.index_title = "Welcome to TutorLink Platform Administration"
+admin.site.site_header = "Seekshalaya Admin"
+admin.site.site_title = "Seekshalaya Admin Portal"
+admin.site.index_title = "Welcome to Seekshalaya Platform Administration"

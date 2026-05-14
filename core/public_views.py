@@ -326,7 +326,7 @@ def contact_message(request):
 
     try:
         send_mail(
-            subject=f"TutorLink contact: {data['subject']}",
+            subject=f"Seekshalaya contact: {data['subject']}",
             message=body,
             from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
             recipient_list=[getattr(settings, "DEFAULT_FROM_EMAIL", data["email"])],

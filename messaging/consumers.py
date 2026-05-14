@@ -91,6 +91,9 @@ class MessagingConsumer(AsyncJsonWebsocketConsumer):
     async def messages_read(self, event):
         await self.send_json({"type": "messages.read", "data": event["data"]})
 
+    async def messages_deleted(self, event):
+        await self.send_json({"type": "messages.deleted", "data": event["data"]})
+
     def get_token(self):
         query_string = self.scope["query_string"].decode()
         if "token=" not in query_string:
@@ -108,6 +111,12 @@ class MessagingConsumer(AsyncJsonWebsocketConsumer):
 
     @database_sync_to_async
     def user_has_access(self):
+        if self.user.role == "admin":
+            return Conversation.objects.filter(
+                id=self.conversation_id,
+                is_active=True,
+            ).exists()
+
         return Conversation.objects.filter(
             id=self.conversation_id,
             is_active=True,

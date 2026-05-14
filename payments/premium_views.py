@@ -6,18 +6,35 @@ from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.conf import settings
+from django.db.models import Q
 from datetime import timedelta
 import requests
 import uuid
 import logging
 
 from .models import PremiumSubscription
+from .plans import find_teacher_plan, teacher_plan_options
 from profiles.models import TeacherProfile
+from profiles.verification import teacher_documents_verified
 from .serializers import PremiumSubscriptionSerializer
-from gigs.models import Gig
-from applications.models import Application
 
 logger = logging.getLogger(__name__)
+
+
+def _premium_verification_error(user, teacher_profile):
+    if not teacher_profile.full_name:
+        return "Complete your teacher profile before subscribing to Premium."
+
+    if teacher_profile.kyc_photo_verified is not True:
+        return "Your profile KYC photo must be verified before subscribing to Premium."
+
+    if not teacher_documents_verified(user):
+        return (
+            "Your citizenship front, citizenship back, academic document, and CV "
+            "must be verified before subscribing to Premium."
+        )
+
+    return None
 
 
 class CreatePremiumSubscriptionView(generics.CreateAPIView):
@@ -42,27 +59,18 @@ class CreatePremiumSubscriptionView(generics.CreateAPIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Check eligibility: Must have completed a gig or been selected in at least one gig
-        completed_gigs = Gig.objects.filter(
-            hired_teacher=request.user, status="completed"
-        ).exists()
-
-        selected_applications = Application.objects.filter(
-            teacher=request.user, status__in=["selected", "accepted"]
-        ).exists()
-
-        if not (completed_gigs or selected_applications):
+        verification_error = _premium_verification_error(request.user, teacher_profile)
+        if verification_error:
             return Response(
-                {
-                    "error": "You must complete at least one gig or be selected in a gig before subscribing to premium",
-                    "eligible": False,
-                },
+                {"error": verification_error},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
         # Check if there's already an active subscription
         active_subscription = PremiumSubscription.objects.filter(
-            teacher=request.user, status="active"
+            Q(expires_at__isnull=True) | Q(expires_at__gt=timezone.now()),
+            teacher=request.user,
+            status="active",
         ).first()
 
         if active_subscription:
@@ -76,9 +84,26 @@ class CreatePremiumSubscriptionView(generics.CreateAPIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        serializer = self.get_serializer(data=request.data)
+        plan_option_id = request.data.get("plan_option_id") or request.data.get("plan_id")
+        plan = find_teacher_plan(plan_option_id)
+        if not plan:
+            return Response(
+                {"error": "Select a valid premium plan"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        serializer = self.get_serializer(
+            data={
+                "amount": plan["amount"],
+                "duration_days": plan["duration_days"],
+            }
+        )
         if serializer.is_valid():
-            subscription = serializer.save(teacher=request.user)
+            subscription = serializer.save(
+                teacher=request.user,
+                plan_id=plan["plan_id"],
+                billing_cycle=plan["billing_cycle"],
+            )
 
             # Generate unique purchase_order_id (not khalti_pidx yet)
             purchase_order_id = f"premium_{uuid.uuid4().hex[:20]}"
@@ -152,7 +177,7 @@ class CreatePremiumSubscriptionView(generics.CreateAPIView):
         Returns:
             dict: {'success': bool, 'payment_url': str, 'pidx': str, 'error': str}
         """
-        url = "https://a.khalti.com/api/v2/epayment/initiate/"
+        url = settings.KHALTI_INITIATE_URL
 
         # Get phone number safely
         phone = "9800000003"  # Default
@@ -167,7 +192,10 @@ class CreatePremiumSubscriptionView(generics.CreateAPIView):
             "website_url": settings.FRONTEND_URL,
             "amount": int(subscription.amount * 100),
             "purchase_order_id": purchase_order_id,
-            "purchase_order_name": f"Premium Subscription - {subscription.duration_days} days",
+            "purchase_order_name": (
+                f"Teacher Premium {subscription.plan_id} - "
+                f"{subscription.billing_cycle or subscription.duration_days}"
+            ),
             "customer_info": {
                 "name": f"{user.first_name} {user.last_name}".strip() or user.email,
                 "email": user.email,
@@ -273,7 +301,9 @@ def check_premium_eligibility(request):
 
     # Check for active subscription
     active_subscription = PremiumSubscription.objects.filter(
-        teacher=request.user, status="active"
+        Q(expires_at__isnull=True) | Q(expires_at__gt=timezone.now()),
+        teacher=request.user,
+        status="active",
     ).first()
 
     if active_subscription:
@@ -287,34 +317,19 @@ def check_premium_eligibility(request):
             }
         )
 
-    # Check eligibility criteria
-    completed_gigs_count = Gig.objects.filter(
-        hired_teacher=request.user, status="completed"
-    ).count()
-
-    selected_applications_count = Application.objects.filter(
-        teacher=request.user, status__in=["selected", "accepted"]
-    ).count()
-
-    active_gigs_count = Gig.objects.filter(
-        hired_teacher=request.user, status="active"
-    ).count()
-
-    is_eligible = completed_gigs_count > 0 or selected_applications_count > 0
+    verification_error = _premium_verification_error(request.user, teacher_profile)
+    if verification_error:
+        return Response(
+            {
+                "eligible": False,
+                "reason": verification_error,
+            }
+        )
 
     return Response(
         {
-            "eligible": is_eligible,
-            "reason": (
-                None
-                if is_eligible
-                else "You must complete at least one gig or be selected in a gig to subscribe to premium"
-            ),
-            "stats": {
-                "completed_gigs": completed_gigs_count,
-                "selected_applications": selected_applications_count,
-                "active_gigs": active_gigs_count,
-            },
+            "eligible": True,
+            "reason": None,
         }
     )
 
@@ -403,7 +418,7 @@ def verify_premium_payment(request):
         )
 
     # Verify payment with Khalti
-    url = "https://a.khalti.com/api/v2/epayment/lookup/"
+    url = settings.KHALTI_LOOKUP_URL
     headers = {
         "Authorization": f"Key {settings.KHALTI_SECRET_KEY}",
         "Content-Type": "application/json",
@@ -584,55 +599,5 @@ def cancel_premium_subscription(request, subscription_id):
 @permission_classes([IsAuthenticated])
 def premium_plans(request):
     """Get available premium subscription plans"""
-    plans = [
-        {
-            "id": "monthly",
-            "name": "Monthly Plan",
-            "duration_days": 30,
-            "amount": 1000,
-            "currency": "NPR",
-            "features": [
-                "Priority listing in search results",
-                "Featured badge on profile",
-                "Unlimited applications",
-                "Advanced analytics",
-                "Priority support",
-            ],
-        },
-        {
-            "id": "quarterly",
-            "name": "Quarterly Plan",
-            "duration_days": 90,
-            "amount": 2700,
-            "currency": "NPR",
-            "savings": 300,
-            "features": [
-                "Priority listing in search results",
-                "Featured badge on profile",
-                "Unlimited applications",
-                "Advanced analytics",
-                "Priority support",
-                "10% discount (Save Rs. 300)",
-            ],
-        },
-        {
-            "id": "yearly",
-            "name": "Yearly Plan",
-            "duration_days": 365,
-            "amount": 10000,
-            "currency": "NPR",
-            "savings": 2000,
-            "popular": True,
-            "features": [
-                "Priority listing in search results",
-                "Featured badge on profile",
-                "Unlimited applications",
-                "Advanced analytics",
-                "Priority support",
-                "17% discount (Save Rs. 2,000)",
-                "Exclusive webinars and training",
-            ],
-        },
-    ]
-
-    return Response({"plans": plans})
+    plans = teacher_plan_options()
+    return Response({"plans": plans, "count": len(plans)})

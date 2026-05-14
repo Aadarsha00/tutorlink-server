@@ -4,6 +4,10 @@ from .models import Application
 from gigs.models import Gig
 from profiles.serializers import TeacherProfileSerializer, ParentProfileSerializer
 from profiles.verification import teacher_documents_verified
+from django.utils import timezone
+from django.db.models import Q
+from payments.models import PremiumSubscription
+from payments.plans import APPLICATION_FREE_LIMIT
 
 
 class ApplicationSerializer(serializers.ModelSerializer):
@@ -111,6 +115,25 @@ class ApplicationSerializer(serializers.ModelSerializer):
         # Check for duplicate applications
         if Application.objects.filter(gig=gig, teacher=user).exists():
             raise serializers.ValidationError("You have already applied to this gig.")
+
+        has_active_premium = PremiumSubscription.objects.filter(
+            Q(expires_at__isnull=True) | Q(expires_at__gt=timezone.now()),
+            teacher=user,
+            status="active",
+        ).exists()
+
+        if not has_active_premium:
+            application_count = Application.objects.filter(teacher=user).count()
+            if application_count >= APPLICATION_FREE_LIMIT:
+                raise serializers.ValidationError(
+                    {
+                        "premium_required": (
+                            f"You have used your {APPLICATION_FREE_LIMIT} free gig "
+                            "applications. Subscribe to Premium to apply to more gigs."
+                        ),
+                        "free_application_limit": APPLICATION_FREE_LIMIT,
+                    }
+                )
 
         return attrs
 

@@ -23,6 +23,7 @@ class GigSerializer(serializers.ModelSerializer):
         allow_null=True,
     )
     applications_count = serializers.SerializerMethodField(read_only=True)
+    is_boosted = serializers.SerializerMethodField()
 
     progress_percentage = serializers.SerializerMethodField()
     days_remaining = serializers.SerializerMethodField()
@@ -47,6 +48,9 @@ class GigSerializer(serializers.ModelSerializer):
             "selected_teacher",
             "hired_teacher",
             "applications_count",
+            "is_boosted",
+            "boosted_until",
+            "boost_plan_id",
             "progress_percentage",
             "days_remaining",
             "created_at",
@@ -59,6 +63,9 @@ class GigSerializer(serializers.ModelSerializer):
             "parent",
             "parent_profile",
             "applications_count",
+            "is_boosted",
+            "boosted_until",
+            "boost_plan_id",
             "progress_percentage",
             "days_remaining",
             "created_at",
@@ -102,6 +109,9 @@ class GigSerializer(serializers.ModelSerializer):
     def get_applications_count(self, obj):
         return obj.applications.count()
 
+    def get_is_boosted(self, obj):
+        return bool(obj.boosted_until and obj.boosted_until > timezone.now())
+
     def validate(self, attrs):
         request = self.context.get("request")
         user = request.user if request else None
@@ -117,6 +127,7 @@ class GigSerializer(serializers.ModelSerializer):
 class GigListSerializer(serializers.ModelSerializer):
     applications_count = serializers.SerializerMethodField()
     parent_profile = serializers.SerializerMethodField()
+    is_boosted = serializers.SerializerMethodField()
     progress_percentage = serializers.SerializerMethodField()
     days_remaining = serializers.SerializerMethodField()
 
@@ -137,6 +148,9 @@ class GigListSerializer(serializers.ModelSerializer):
             "location",
             "status",
             "created_at",
+            "is_boosted",
+            "boosted_until",
+            "boost_plan_id",
             "applications_count",
             "progress_percentage",
             "days_remaining",
@@ -184,6 +198,9 @@ class GigListSerializer(serializers.ModelSerializer):
     def get_applications_count(self, obj):
         return obj.applications.count()
 
+    def get_is_boosted(self, obj):
+        return bool(obj.boosted_until and obj.boosted_until > timezone.now())
+
 
 class PublicGigDetailSerializer(GigListSerializer):
     class Meta:
@@ -204,6 +221,9 @@ class PublicGigDetailSerializer(GigListSerializer):
             "sessions_per_week",
             "status",
             "created_at",
+            "is_boosted",
+            "boosted_until",
+            "boost_plan_id",
             "applications_count",
             "progress_percentage",
             "days_remaining",

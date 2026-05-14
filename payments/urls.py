@@ -45,4 +45,15 @@ urlpatterns = [
         gig_views.payment_status,
         name="payment-status",
     ),
+    path("gig-boosts/plans/", gig_views.boost_plans, name="gig-boost-plans"),
+    path(
+        "gig-boosts/initiate/<int:gig_id>/",
+        gig_views.initiate_gig_boost,
+        name="initiate-gig-boost",
+    ),
+    path(
+        "gig-boosts/verify/",
+        gig_views.verify_gig_boost,
+        name="verify-gig-boost",
+    ),
 ]

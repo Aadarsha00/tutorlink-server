@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import PremiumSubscription, GigPayment
+from .models import PremiumSubscription, GigPayment, GigBoostPayment
 
 
 class PremiumSubscriptionSerializer(serializers.ModelSerializer):
@@ -13,6 +13,8 @@ class PremiumSubscriptionSerializer(serializers.ModelSerializer):
             "id",
             "teacher",
             "teacher_name",
+            "plan_id",
+            "billing_cycle",
             "amount",
             "duration_days",
             "starts_at",
@@ -26,6 +28,8 @@ class PremiumSubscriptionSerializer(serializers.ModelSerializer):
         read_only_fields = [
             "id",
             "teacher",
+            "plan_id",
+            "billing_cycle",
             "starts_at",
             "expires_at",
             "status",
@@ -64,6 +68,31 @@ class GigPaymentSerializer(serializers.ModelSerializer):
             "created_at",
             "paid_at",
         ]
+
+
+class GigBoostPaymentSerializer(serializers.ModelSerializer):
+    gig_title = serializers.CharField(source="gig.title", read_only=True)
+    parent_name = serializers.CharField(source="parent.full_name", read_only=True)
+
+    class Meta:
+        model = GigBoostPayment
+        fields = [
+            "id",
+            "gig",
+            "gig_title",
+            "parent",
+            "parent_name",
+            "plan_id",
+            "amount",
+            "duration_days",
+            "status",
+            "khalti_pidx",
+            "khalti_transaction_id",
+            "starts_at",
+            "expires_at",
+            "created_at",
+            "paid_at",
+        ]
         read_only_fields = [
             "id",
             "parent",
@@ -72,6 +101,19 @@ class GigPaymentSerializer(serializers.ModelSerializer):
             "status",
             "khalti_pidx",
             "khalti_transaction_id",
+            "created_at",
+            "paid_at",
+        ]
+        read_only_fields = [
+            "id",
+            "parent",
+            "amount",
+            "duration_days",
+            "status",
+            "khalti_pidx",
+            "khalti_transaction_id",
+            "starts_at",
+            "expires_at",
             "created_at",
             "paid_at",
         ]

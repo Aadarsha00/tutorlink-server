@@ -14,6 +14,7 @@ from gigs.models import Gig
 from profiles.models import Rating
 from payments.models import PremiumSubscription, GigPayment
 from payments.serializers import PremiumSubscriptionSerializer
+from payments.plans import APPLICATION_FREE_LIMIT
 
 
 @api_view(["GET"])
@@ -306,6 +307,10 @@ def teacher_stats(request):
         is_premium = False
         premium_expires_at = None
 
+    gig_applications_available = None if is_premium else max(
+        APPLICATION_FREE_LIMIT - total_applications, 0
+    )
+
     active_subscription = PremiumSubscription.objects.filter(
         teacher=request.user, status="active"
     ).first()
@@ -375,6 +380,9 @@ def teacher_stats(request):
             # Summary metrics
             "summary": {
                 "total_applications": total_applications,
+                "free_gig_application_limit": APPLICATION_FREE_LIMIT,
+                "gig_applications_used": total_applications,
+                "gig_applications_available": gig_applications_available,
                 "pending_applications": pending_applications,
                 "selected_applications": selected_applications,
                 "accepted_applications": accepted_applications,
@@ -489,10 +497,16 @@ def parent_stats(request):
     # ============ SPENDING METRICS ============
 
     # Total spent (completed payments)
+    parent_payments = GigPayment.objects.filter(parent=request.user)
+    completed_payments = parent_payments.filter(status="completed")
     total_spent = (
-        GigPayment.objects.filter(parent=request.user, status="completed").aggregate(
-            total=Sum("amount")
-        )["total"]
+        completed_payments.aggregate(total=Sum("amount"))["total"]
+        or 0
+    )
+    pending_payments = (
+        parent_payments.filter(status="pending").aggregate(total=Sum("amount"))[
+            "total"
+        ]
         or 0
     )
 
@@ -501,12 +515,7 @@ def parent_stats(request):
 
     # Spending over time (last 6 months)
     spending_trends = (
-        GigPayment.objects.filter(
-            parent=request.user,
-            status="completed",
-            paid_at__gte=start_date,
-            paid_at__lte=end_date,
-        )
+        completed_payments.filter(paid_at__gte=start_date, paid_at__lte=end_date)
         .annotate(month=TruncMonth("paid_at"))
         .values("month")
         .annotate(amount=Sum("amount"), count=Count("id"))
@@ -571,12 +580,20 @@ def parent_stats(request):
         )
         .annotate(month=TruncMonth("created_at"))
         .values("month")
-        .annotate(count=Count("id"))
+        .annotate(
+            received=Count("id"),
+            hired=Count("id", filter=Q(status__in=["selected", "accepted"])),
+        )
         .order_by("month")
     )
 
     application_trends_data = [
-        {"month": item["month"].strftime("%Y-%m"), "count": item["count"]}
+        {
+            "month": item["month"].strftime("%Y-%m"),
+            "received": item["received"],
+            "hired": item["hired"],
+            "count": item["received"],
+        }
         for item in application_trends
     ]
 
@@ -695,6 +712,21 @@ def parent_stats(request):
         ).count()
         budget_distribution.append({"range": range_item["label"], "count": count})
 
+    spending_by_subject = (
+        completed_payments.values("gig__subject")
+        .annotate(amount=Sum("amount"), gig_count=Count("id"))
+        .order_by("-amount")[:10]
+    )
+
+    spending_by_subject_data = [
+        {
+            "subject": item["gig__subject"] or "Unknown",
+            "amount": float(item["amount"] or 0),
+            "gig_count": item["gig_count"],
+        }
+        for item in spending_by_subject
+    ]
+
     return Response(
         {
             # Filter metadata
@@ -713,6 +745,7 @@ def parent_stats(request):
                 "average_rating": round(average_rating, 2),
                 "total_reviews": total_reviews,
                 "total_spent": float(total_spent),
+                "pending_payments": float(pending_payments),
                 "avg_gig_budget": round(avg_gig_budget, 2),
                 "avg_applications_per_gig": round(avg_applications_per_gig, 1),
                 "avg_selection_time_days": avg_selection_time,
@@ -730,6 +763,7 @@ def parent_stats(request):
                 "gigs_by_subject": gigs_by_subject_data,
                 "gigs_by_grade": gigs_by_grade_data,
                 "applications_by_status": applications_by_status_data,
+                "spending_by_subject": spending_by_subject_data,
                 "rating_distribution": rating_distribution_data,
                 "budget_distribution": budget_distribution,
             },

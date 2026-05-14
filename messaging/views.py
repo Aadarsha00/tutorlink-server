@@ -8,7 +8,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import Conversation
+from .models import Conversation, Message
 from .serializers import ConversationSerializer, MessageSerializer, SendMessageSerializer
 from .services import MessageService
 
@@ -97,3 +97,76 @@ class MessagingUnreadCountView(ConversationQuerysetMixin, APIView):
                 .count()
             )
         return Response({"unread_count": unread_count})
+
+
+class AdminConversationListView(ListAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = ConversationSerializer
+    pagination_class = None
+
+    def get_queryset(self):
+        if self.request.user.role != "admin":
+            return Conversation.objects.none()
+
+        return (
+            Conversation.objects.select_related("gig", "parent", "teacher")
+            .prefetch_related("messages__sender")
+            .order_by("-last_message_at", "-updated_at")
+        )
+
+
+class AdminConversationMessagesView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        if request.user.role != "admin":
+            return Response(
+                {"error": "Only admins can monitor chats"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        conversation = get_object_or_404(
+            Conversation.objects.select_related("gig", "parent", "teacher"), pk=pk
+        )
+        messages = conversation.messages.select_related("sender").order_by("created_at")
+        return Response(
+            MessageSerializer(
+                messages,
+                many=True,
+                context={"request": request},
+            ).data
+        )
+
+
+class AdminMessageDeleteView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, pk, message_id):
+        if request.user.role != "admin":
+            return Response(
+                {"error": "Only admins can delete monitored messages"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        conversation = get_object_or_404(Conversation, pk=pk)
+        message = get_object_or_404(Message, pk=message_id, conversation=conversation)
+        message.delete()
+
+        latest = conversation.messages.order_by("-created_at").first()
+        conversation.last_message_at = latest.created_at if latest else None
+        conversation.save(update_fields=["last_message_at", "updated_at"])
+
+        channel_layer = get_channel_layer()
+        if channel_layer:
+            async_to_sync(channel_layer.group_send)(
+                f"conversation_{conversation.id}",
+                {
+                    "type": "messages.deleted",
+                    "data": {
+                        "conversation_id": conversation.id,
+                        "message_id": message_id,
+                    },
+                },
+            )
+
+        return Response(status=status.HTTP_204_NO_CONTENT)

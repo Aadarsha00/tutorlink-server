@@ -46,6 +46,7 @@ INSTALLED_APPS = [
     "payments",
     "notifications",
     "messaging",
+    "reports.apps.ReportsConfig",
 ]
 
 MIDDLEWARE = [
@@ -251,7 +252,7 @@ X_FRAME_OPTIONS = "SAMEORIGIN"
 # SITE CONFIGURATION (for email links)
 # ============================================
 DOMAIN = "localhost:5173"  # Your frontend domain
-SITE_NAME = "TutorLink"
+SITE_NAME = "Seekshalaya"
 
 FRONTEND_URL = "http://localhost:5173"
 
@@ -313,5 +314,12 @@ PARENT_DOCUMENTS_DIR = "parent_documents"
 
 KHALTI_SECRET_KEY = os.getenv("KHALTI_SECRET_KEY", "")
 KHALTI_PUBLIC_KEY = os.getenv("KHALTI_PUBLIC_KEY", "")
-KHALTI_INITIATE_URL = "https://dev.khalti.com/api/v2/epayment/initiate/"
-KHALTI_LOOKUP_URL = "https://dev.khalti.com/api/v2/epayment/lookup/"
+KHALTI_BASE_URL = os.getenv("KHALTI_BASE_URL", "https://dev.khalti.com/api/v2")
+KHALTI_INITIATE_URL = os.getenv(
+    "KHALTI_INITIATE_URL",
+    f"{KHALTI_BASE_URL.rstrip('/')}/epayment/initiate/",
+)
+KHALTI_LOOKUP_URL = os.getenv(
+    "KHALTI_LOOKUP_URL",
+    f"{KHALTI_BASE_URL.rstrip('/')}/epayment/lookup/",
+)

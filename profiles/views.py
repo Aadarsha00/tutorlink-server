@@ -294,9 +294,12 @@ def list_teacher_profiles(request):
             Q(full_name__icontains=search) | Q(user__email__icontains=search)
         )
 
-    # Order by
-    order_by = request.query_params.get("order_by", "-created_at")
-    profiles = profiles.order_by(order_by).distinct()
+    # Order by. Premium teachers stay ahead on the default list.
+    order_by = request.query_params.get("order_by")
+    if order_by:
+        profiles = profiles.order_by(order_by).distinct()
+    else:
+        profiles = profiles.order_by("-is_premium", "-created_at").distinct()
 
     serializer = TeacherProfileSerializer(profiles, many=True)
     return Response(serializer.data)

@@ -5,13 +5,15 @@ from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.conf import settings
+from datetime import timedelta
 from decimal import Decimal
 import requests
 import uuid
 import logging
 
-from .models import GigPayment
-from .serializers import GigPaymentSerializer
+from .models import GigBoostPayment, GigPayment
+from .plans import find_boost_plan, boost_plan_options
+from .serializers import GigBoostPaymentSerializer, GigPaymentSerializer
 from gigs.models import Gig
 from applications.models import Application
 
@@ -158,7 +160,7 @@ def _initiate_khalti_payment(payment, user, purchase_order_id):
         user: User instance (not request object)
         purchase_order_id: Our internal order ID
     """
-    url = "https://a.khalti.com/api/v2/epayment/initiate/"
+    url = settings.KHALTI_INITIATE_URL
 
     # Get phone number safely
     phone = "9800000003"  # Default
@@ -306,7 +308,7 @@ def verify_gig_payment(request):
         )
 
     # Verify with Khalti
-    url = "https://a.khalti.com/api/v2/epayment/lookup/"
+    url = settings.KHALTI_LOOKUP_URL
     headers = {
         "Authorization": f"Key {settings.KHALTI_SECRET_KEY}",
         "Content-Type": "application/json",
@@ -485,4 +487,273 @@ def payment_status(request, gig_id):
                 "payment_completed": False,
                 "payment": None,
             }
+        )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def boost_plans(request):
+    """Get available gig boost plans for parents."""
+    if request.user.role != "parent":
+        return Response(
+            {"error": "Only parents can view gig boost plans"},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    plans = boost_plan_options()
+    return Response({"plans": plans, "count": len(plans)})
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def initiate_gig_boost(request, gig_id):
+    """Initiate a parent payment to boost an open gig."""
+    if request.user.role != "parent":
+        return Response(
+            {"error": "Only parents can boost gigs"},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    gig = get_object_or_404(Gig, id=gig_id, parent=request.user)
+    if gig.status != "open":
+        return Response(
+            {"error": "Only open gigs can be boosted"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    plan = find_boost_plan(request.data.get("plan_id"))
+    if not plan:
+        return Response(
+            {"error": "Select a valid boost plan"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    boost = GigBoostPayment.objects.create(
+        gig=gig,
+        parent=request.user,
+        plan_id=plan["id"],
+        amount=plan["amount"],
+        duration_days=plan["duration_days"],
+    )
+    purchase_order_id = f"boost_{uuid.uuid4().hex[:20]}"
+
+    try:
+        khalti_response = _initiate_boost_khalti_payment(
+            boost, request.user, purchase_order_id
+        )
+        if khalti_response.get("success"):
+            khalti_pidx = khalti_response.get("pidx")
+            if not khalti_pidx:
+                boost.delete()
+                return Response(
+                    {"error": "Khalti did not return a pidx"},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
+
+            boost.khalti_pidx = khalti_pidx
+            boost.save(update_fields=["khalti_pidx"])
+
+            return Response(
+                {
+                    "boost": GigBoostPaymentSerializer(boost).data,
+                    "message": "Boost payment initiated. Proceed with payment.",
+                    "payment_url": khalti_response.get("payment_url"),
+                    "pidx": khalti_pidx,
+                },
+                status=status.HTTP_201_CREATED,
+            )
+
+        boost.delete()
+        return Response(
+            {
+                "error": "Failed to initiate boost payment",
+                "details": khalti_response.get("error"),
+            },
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+    except Exception as e:
+        logger.exception(f"Boost payment initiation failed for gig {gig_id}")
+        boost.delete()
+        return Response(
+            {"error": f"Boost payment initiation failed: {str(e)}"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+def _initiate_boost_khalti_payment(boost, user, purchase_order_id):
+    url = settings.KHALTI_INITIATE_URL
+
+    phone = "9800000003"
+    try:
+        if hasattr(user, "parent_profile") and user.parent_profile:
+            phone = user.parent_profile.phone or phone
+    except Exception as e:
+        logger.warning(f"Could not get phone from parent_profile: {e}")
+
+    payload = {
+        "return_url": f"{settings.FRONTEND_URL}/payment/gig-boost/verify",
+        "website_url": settings.FRONTEND_URL,
+        "amount": int(Decimal(str(boost.amount)) * 100),
+        "purchase_order_id": purchase_order_id,
+        "purchase_order_name": f"Gig Boost - {boost.gig.title}",
+        "customer_info": {
+            "name": f"{user.first_name} {user.last_name}".strip() or user.email,
+            "email": user.email,
+            "phone": phone,
+        },
+    }
+
+    headers = {
+        "Authorization": f"Key {settings.KHALTI_SECRET_KEY}",
+        "Content-Type": "application/json",
+    }
+
+    try:
+        response = requests.post(url, json=payload, headers=headers, timeout=30)
+        if not response.text:
+            return {"success": False, "error": "Empty response from payment gateway"}
+
+        try:
+            data = response.json()
+        except ValueError:
+            return {
+                "success": False,
+                "error": f"Invalid response from payment gateway: {response.text[:200]}",
+            }
+
+        if response.status_code == 200:
+            return {
+                "success": True,
+                "payment_url": data.get("payment_url"),
+                "pidx": data.get("pidx"),
+            }
+
+        return {
+            "success": False,
+            "error": data.get("error_key") or data.get("detail") or "Unknown error",
+        }
+    except requests.Timeout:
+        return {"success": False, "error": "Payment gateway timeout"}
+    except Exception as e:
+        logger.exception("Khalti boost API call failed")
+        return {"success": False, "error": f"Payment error: {str(e)}"}
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def verify_gig_boost(request):
+    """Verify a gig boost payment and activate boosted placement."""
+    if request.user.role != "parent":
+        return Response(
+            {"error": "Only parents can verify gig boosts"},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    pidx = request.data.get("pidx")
+    if not pidx:
+        return Response(
+            {"error": "pidx is required"}, status=status.HTTP_400_BAD_REQUEST
+        )
+
+    try:
+        boost = GigBoostPayment.objects.select_related("gig").get(khalti_pidx=pidx)
+    except GigBoostPayment.DoesNotExist:
+        return Response(
+            {"error": "Boost payment not found"},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    if boost.parent != request.user:
+        return Response(
+            {"error": "This boost payment does not belong to you"},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    if boost.status == "completed":
+        return Response(
+            {
+                "success": True,
+                "message": "Boost already verified",
+                "boost": GigBoostPaymentSerializer(boost).data,
+            }
+        )
+
+    url = settings.KHALTI_LOOKUP_URL
+    headers = {
+        "Authorization": f"Key {settings.KHALTI_SECRET_KEY}",
+        "Content-Type": "application/json",
+    }
+
+    try:
+        response = requests.post(url, json={"pidx": pidx}, headers=headers, timeout=30)
+        if not response.text:
+            return Response(
+                {"error": "Empty response from payment gateway"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        data = response.json()
+        payment_status = data.get("status", "").strip()
+
+        if response.status_code == 200 and payment_status == "Completed":
+            from django.db import transaction
+
+            with transaction.atomic():
+                starts_at = timezone.now()
+                current_boost_end = boost.gig.boosted_until
+                if current_boost_end and current_boost_end > starts_at:
+                    starts_at = current_boost_end
+
+                expires_at = starts_at + timedelta(days=boost.duration_days)
+
+                boost.status = "completed"
+                boost.starts_at = starts_at
+                boost.expires_at = expires_at
+                boost.paid_at = timezone.now()
+                boost.khalti_transaction_id = data.get("transaction_id")
+                boost.save()
+
+                gig = boost.gig
+                gig.boosted_until = expires_at
+                gig.boost_plan_id = boost.plan_id
+                gig.save(update_fields=["boosted_until", "boost_plan_id", "updated_at"])
+
+            return Response(
+                {
+                    "success": True,
+                    "message": "Gig boost activated",
+                    "boost": GigBoostPaymentSerializer(boost).data,
+                }
+            )
+
+        if payment_status == "Pending":
+            return Response(
+                {
+                    "success": False,
+                    "message": "Payment is still being processed",
+                    "status": "pending",
+                },
+                status=status.HTTP_202_ACCEPTED,
+            )
+
+        boost.status = "failed"
+        boost.save(update_fields=["status"])
+        return Response(
+            {
+                "success": False,
+                "message": "Boost payment verification failed",
+                "status": payment_status,
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    except requests.Timeout:
+        return Response(
+            {"error": "Payment verification timeout"},
+            status=status.HTTP_504_GATEWAY_TIMEOUT,
+        )
+    except Exception as e:
+        logger.exception(f"Boost verification exception for pidx {pidx}")
+        return Response(
+            {"error": f"Verification failed: {str(e)}"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )

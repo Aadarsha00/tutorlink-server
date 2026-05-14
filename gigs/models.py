@@ -45,9 +45,12 @@ class Gig(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     published_at = models.DateTimeField(null=True, blank=True)
     closed_at = models.DateTimeField(null=True, blank=True)
+    boosted_until = models.DateTimeField(null=True, blank=True)
+    boost_plan_id = models.CharField(max_length=50, blank=True, default="")
 
     class Meta:
         indexes = [
             models.Index(fields=["status", "-created_at"]),
             models.Index(fields=["subject", "grade"]),
+            models.Index(fields=["boosted_until", "-created_at"]),
         ]

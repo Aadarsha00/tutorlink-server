@@ -23,6 +23,11 @@ def user_payload(user, request=None):
         "full_name": user.get_full_name() or user.email,
         "role": user.role,
         "profile_picture": profile_picture_url(user, request),
+        "is_active": user.is_active,
+        "suspended_until": user.suspended_until.isoformat()
+        if user.suspended_until
+        else None,
+        "moderation_status": user.moderation_status(),
     }
 
 
